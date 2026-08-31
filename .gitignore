@@ -1,0 +1,23 @@
+# IntelliJ
+.idea/
+*.iml
+
+# Java
+backend/target/
+
+# Node
+frontend/node_modules/
+node_modules/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Supabase
+supabase/.temp/
+supabase/.branches/
+
+# Operating System
+.DS_Store
+Thumbs.db
