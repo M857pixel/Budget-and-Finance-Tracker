@@ -20,11 +20,11 @@ CREATE TABLE IF NOT EXISTS transactions (
     transaction_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id BIGINT NOT NULL,
 
-    name VARCHAR(50) NOT NULL,
+    transaction_name VARCHAR(50) NOT NULL,
     transaction_type VARCHAR(50),
-    amount DECIMAL(12, 2) NOT NULL,
+    transaction_amount DECIMAL(12, 2) NOT NULL,
     transaction_date DATE NOT NULL,
-    description VARCHAR(250),
+    transaction_description VARCHAR(250),
 
     FOREIGN KEY (user_id)
     REFERENCES users(user_id)
