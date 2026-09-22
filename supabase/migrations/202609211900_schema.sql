@@ -30,3 +30,4 @@ CREATE TABLE IF NOT EXISTS transactions (
     REFERENCES users(user_id)
     ON DELETE CASCADE
     );
+
