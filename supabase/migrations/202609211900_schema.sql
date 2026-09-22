@@ -11,8 +11,8 @@
  -- Can be acessed via user_id
 CREATE TABLE IF NOT EXISTS users (
     user_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    email VARCHAR(100) NOT NULL,
-    password_hash VARCHAR(100) NOT NULL --Called password_hash, will be a password until we have encryption set up
+    user_email VARCHAR(100) NOT NULL,
+    user_password_hash VARCHAR(100) NOT NULL --Called password_hash, will be a password until we have encryption set up
     );
 
 -- Can be accessed via transaction_id and user_id
