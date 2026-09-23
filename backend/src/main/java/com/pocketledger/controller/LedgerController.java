@@ -23,7 +23,7 @@ import java.util.List;
 @CrossOrigin(origins = "http://localhost:5173")
 public class LedgerController {
 
-    //Sotres the repositories
+    //Stores the repositories
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
 
