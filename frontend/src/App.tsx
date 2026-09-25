@@ -2,61 +2,102 @@ import './App.css'
 import { useState } from 'react'
 
 function App() {
-  const [message, setMessage] = useState('')
-  const [amount, setAmount] = useState('')
+    const [message, setMessage] = useState('')
+    const [amount, setAmount] = useState('')
+    const [activeTab, setActiveTab] = useState<'add' | 'modify' | 'history' | 'import'>('add')
 
-  const addAmount = async () => {
-    try {
-      const response = await fetch('http://localhost:8080/api/test-record', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: Number(amount) }),
-      })
-      setMessage(response.ok ? 'Amount sent!' : 'Backend rejected the amount.')
-    } catch {
-      setMessage('Could not connect to the backend.')
+    const addAmount = async () => {
+        try {
+            const response = await fetch('http://localhost:8080/api/test-record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: Number(amount) }),
+            })
+            if (response.ok) {
+                setMessage(`Amount sent! ($${amount})`)
+                setAmount('')
+            } else {
+                setMessage('Backend rejected the amount.')
+            }
+        } catch {
+            setMessage('Could not connect to the backend.')
+        }
     }
-  }
 
-  const testBackend = async () => {
-    const response = await fetch('http://localhost:8080/api/hello')
-    const text = await response.text()
-    setMessage(text)
-  }
+    const testBackend = async () => {
+        const response = await fetch('http://localhost:8080/api/hello')
+        const text = await response.text()
+        setMessage(text)
+    }
 
     return (
         <main className="dashboard">
             <h1>PocketLedger</h1>
 
-            <section className="transaction-add">
-                <h2>Current balance</h2>
-                <p className="balance">$1,250.00</p>
+            {/*  top bar allows for navigation between multiple core features, the selected option is then displayed below*/}
+            <nav className="topbar">
+                <button
+                    className={activeTab === 'add' ? 'active' : ''}
+                    onClick={() => setActiveTab('add')}
+                >
+                    Add Transaction
+                </button>
+                <button
+                    className={activeTab === 'modify' ? 'active' : ''}
+                    onClick={() => setActiveTab('modify')}
+                >
+                    Modify Transaction
+                </button>
+                <button
+                    className={activeTab === 'history' ? 'active' : ''}
+                    onClick={() => setActiveTab('history')}
+                >
+                    Transaction History
+                </button>
+                <button
+                    className={activeTab === 'import' ? 'active' : ''}
+                    onClick={() => setActiveTab('import')}
+                >
+                    Import CSV
+                </button>
+            </nav>
 
-                <div className="actions">
-                    <form onSubmit={(event) => {
-                        event.preventDefault()
-                        void addAmount()
-                    }}>
-                        <input
-                            type="number"
-                            aria-label="Amount"
-                            placeholder="Enter amount"
-                            step="0.01"
-                            required
-                            value={amount}
-                            onChange={(event) => setAmount(event.target.value)}
-                        />
-                        <button type="submit">Add</button>
-                    </form>
+            {/* this section determines what is the current active portion displayed under the topbar  */}
+            <section className="content">
+                {activeTab === 'add' && (
+                    <section className="transaction-add">
+                        <h2>Current balance</h2>
+                        <p className="balance">$0.00</p>
 
-                    <button onClick={testBackend}>
-                        Test backend
-                    </button>
-                </div>
+                        <div className="actions">
+                            <form onSubmit={(event) => {
+                                event.preventDefault()
+                                void addAmount()
+                            }}>
+                                <input
+                                    type="number"
+                                    aria-label="Amount"
+                                    placeholder="Enter amount"
+                                    step="0.01"
+                                    required
+                                    value={amount}
+                                    onChange={(event) => setAmount(event.target.value)}
+                                />
+                                <button type="submit">Add</button>
+                            </form>
 
-                
+                            <button onClick={testBackend}>
+                                Test backend
+                            </button>
+                        </div>
 
-                <p>{message}</p>
+                        <p>{message}</p>
+                    </section>
+                )}
+
+                {activeTab === 'modify' && <p>Modify Transaction UI goes here.</p>}
+                {activeTab === 'history' && <p>Transaction History UI goes here.</p>}
+                {activeTab === 'import' && <p>Import CSV UI goes here.</p>}
             </section>
         </main>
     )
