@@ -2,12 +2,22 @@
     Connects HTTP requests from the frontend to the repositories that read and
     write to the database. Depends on both model and repository.
 
-    Run in Command Line:
-    1. cd to backend folder
-    2. Create User: $user = Invoke-RestMethod -Method Post
+    Create User and Transaction in Terminal:
+    1. Start backend
+    2. In terminal cd to backend folder
+    3. To Create User Type On The Same line:
+
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                            $user = Invoke-RestMethod -Method Post
                             -Uri "http://localhost:8080/api/users"
                             -ContentType "application/json"
                             -Body '{"email":"{put email here}","passwordHash":"{put password here}"}'
+
+    Mac Command:
+                            curl -X POST http://localhost:8080/api/users \
+                            -H "Content-Type: application/json" \
+                            -d '{"email":"{put email here}","passwordHash":"{put password here}"}'
 
     Response:
     {
@@ -15,11 +25,19 @@
         "email": "{email}"
     }
 
+    4. To Create Transaction Type On The Same Line:
 
-    3. Create Transaction: Invoke-RestMethod -Method Post
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                            Invoke-RestMethod -Method Post
                             -Uri "http://localhost:8080/api/users/{put user id here}/transactions"
                             -ContentType "application/json"
-                            -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY/MM/DD}","description":"{put description here}"}'
+                            -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
+
+    Mac Command:
+                            curl -X POST http://localhost:8080/api/users/{put user id here}/transactions \
+                            -H "Content-Type: application/json" \
+                            -d '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
     Response: Converted from below JSON to a transaction record using toResponse
     {
@@ -31,7 +49,8 @@
         "date": "{date: YY-MM-DD}",
         "description": "{description}"
     }
- */
+
+*/
 
 package com.pocketledger.controller;
 
