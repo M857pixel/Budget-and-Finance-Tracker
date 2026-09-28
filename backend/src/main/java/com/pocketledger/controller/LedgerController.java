@@ -1,6 +1,36 @@
 /*
     Connects HTTP requests from the frontend to the repositories that read and
     write to the database. Depends on both model and repository.
+
+    Run in Command Line:
+    1. cd to backend folder
+    2. Create User: $user = Invoke-RestMethod -Method Post
+                            -Uri "http://localhost:8080/api/users"
+                            -ContentType "application/json"
+                            -Body '{"email":"{put email here}","passwordHash":"{put password here}"}'
+
+    Response:
+    {
+        "userId": {id},
+        "email": "{email}"
+    }
+
+
+    3. Create Transaction: Invoke-RestMethod -Method Post
+                            -Uri "http://localhost:8080/api/users/{put user id here}/transactions"
+                            -ContentType "application/json"
+                            -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY/MM/DD}","description":"{put description here}"}'
+
+    Response: Converted from below JSON to a transaction record using toResponse
+    {
+        "transactionId": {transactionId},
+        "userId": {userId},
+        "name": "{name}",
+        "type": "{type}",
+        "amount": {amount},
+        "date": "{date: YY-MM-DD}",
+        "description": "{description}"
+    }
  */
 
 package com.pocketledger.controller;
@@ -83,6 +113,7 @@ public class LedgerController {
         );
     }
 
+    //Sping Boot uses these data containers to convert between JSON and Java objects
     public record CreateUserRequest(String email, String passwordHash) {}
     public record UserResponse(Long userId, String email) {}
     public record CreateTransactionRequest(String name, String type, BigDecimal amount,
