@@ -1,2 +1,0 @@
-GET https://api.frankfurter.dev/v2/rates?base=USD
-Accept: application/json
