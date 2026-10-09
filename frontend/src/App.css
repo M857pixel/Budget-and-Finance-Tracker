@@ -1,10 +1,12 @@
 /* shared colors and effects that can be reused with var() */
 :root {
+  color-scheme: light;
+  --text: #000;
   --accent: #3b6ea5;
   --accent-bg: #eef3fa;
   --accent-border: #3b6ea5;
   --border: #d8dee5;
-  --text-h: #1c1c1c;
+  --text-h: #000;
   --social-bg: #f0f0f0;
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
@@ -17,8 +19,19 @@
 /* sets the page font & background */
 body {
   margin: 0;
+  color: #000;
   font-family: system-ui, sans-serif;
   background: #cfd8dc;
+}
+
+input {
+  color: #000;
+  background: #fff;
+}
+
+input::placeholder {
+  color: #000;
+  opacity: 1;
 }
 
 /* centers the dashboard & limits how wide it can get */
@@ -59,7 +72,7 @@ body {
 /* highlights the tab selected*/
 .topbar button.active {
   background: var(--accent-bg);
-  color: var(--accent);
+  color: #000;
   font-weight: bold;
 }
 
@@ -85,7 +98,7 @@ body {
 .transaction-add h2 {
   margin: 0 0 4px;
   font-size: 1rem;
-  color: #666;
+  color: #000;
 }
 
 .balance {

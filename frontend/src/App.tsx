@@ -2,6 +2,42 @@ import './App.css'
 import { useState } from 'react'
 
 function App() {
+    const [isLoggedIn, setIsLoggedIn] = useState(false)
+    const [email, setEmail] = useState('')
+    const [password, setPassword] = useState('')
+    const [loginError, setLoginError] = useState('')
+    const [isLoggingIn, setIsLoggingIn] = useState(false)
+
+    const login = async () => {
+        if (isLoggingIn) return
+        setLoginError('')
+        setIsLoggingIn(true)
+        try {
+            // Send the email and password so the backend can check the users table.
+            const response = await fetch('http://localhost:8080/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // Remove spaces around the email; send the password as typed.
+                body: JSON.stringify({ email: email.trim(), password }),
+            })
+            // 200 means login succeeded; 401 or 403 means login was rejected.
+            if (response.status === 200) {
+                setPassword('')
+                setIsLoggedIn(true)
+            } else if (response.status === 401 || response.status === 403) {
+                setLoginError('Incorrect email or password.')
+            } else if (response.status === 404 || response.status === 405) {
+                setLoginError('The backend login endpoint is not available yet.')
+            } else {
+                setLoginError('Login failed. Please try again.')
+            }
+        } catch {
+            setLoginError('Could not connect to the backend.')
+        } finally {
+            setIsLoggingIn(false)
+        }
+    }
+
     // track backend feedback, entered amount, and selected tab
     const [message, setMessage] = useState('')
     const [amount, setAmount] = useState('')
@@ -13,6 +49,7 @@ function App() {
             const response = await fetch('http://localhost:8080/api/test-record', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                // Send the entered amount as a number instead of text.
                 body: JSON.stringify({ amount: Number(amount) }),
             })
             if (response.ok) {
@@ -28,14 +65,57 @@ function App() {
 
     // checks the backend connection and displays its response
     const testBackend = async () => {
+        // Ask for a connection message; no input values are sent.
         const response = await fetch('http://localhost:8080/api/hello')
         const text = await response.text()
         setMessage(text)
     }
 
+    if (!isLoggedIn) {
+        return (
+            <main style={{ width: 'min(360px, 100%)', margin: 'auto', padding: '24px', boxSizing: 'border-box' }}>
+                <h1>PocketLedger</h1>
+                <h2>Log in</h2>
+                <form style={{ display: 'grid', gap: '16px', textAlign: 'left', marginTop: '24px' }}
+                    onSubmit={(event) => {
+                        event.preventDefault()
+                        void login()
+                    }}>
+                    <label htmlFor="login-email">Email</label>
+                    <input id="login-email" type="email" autoComplete="username"
+                        maxLength={100} required disabled={isLoggingIn} value={email}
+                        onChange={(event) => setEmail(event.target.value)} />
+                    <label htmlFor="login-password">Password</label>
+                    <input id="login-password" type="password" autoComplete="current-password"
+                        required disabled={isLoggingIn} value={password}
+                        onChange={(event) => setPassword(event.target.value)} />
+                    <button type="submit" disabled={isLoggingIn}>
+                        {isLoggingIn ? 'Logging in?' : 'Log in'}
+                    </button>
+                    {loginError && <p role="alert">{loginError}</p>}
+                </form>
+                {/* Opens the dashboard without checking login for testing. */}
+                <button type="button"
+                    style={{ position: 'fixed', bottom: '20px', right: '20px' }}
+                    onClick={function () { setIsLoggedIn(true) }}>
+                    Skip login for testing
+                </button>
+            </main>
+        )
+    }
+
     return (
         <main className="dashboard">
             <h1>PocketLedger</h1>
+            <button onClick={() => {
+                setIsLoggedIn(false)
+                setEmail('')
+                setPassword('')
+                setLoginError('')
+                setMessage('')
+                setAmount('')
+                setActiveTab('add')
+            }}>Log out</button>
 
             {/* top bar switches between the main features */}
             <nav className="topbar">
