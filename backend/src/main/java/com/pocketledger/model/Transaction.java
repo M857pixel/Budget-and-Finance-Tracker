@@ -77,4 +77,15 @@ public class Transaction {
     public BigDecimal getTransactionAmount() { return transactionAmount; }
     public LocalDate getTransactionDate() { return transactionDate; }
     public String getTransactionDescription() { return transactionDescription; }
+
+    //Apply supplied fields only; null values leave existing fields unchanged.
+    public void updateDetails(String transactionName, String transactionType,
+                              BigDecimal transactionAmount, LocalDate transactionDate,
+                              String transactionDescription) {
+        if (transactionName != null) this.transactionName = transactionName;
+        if (transactionType != null) this.transactionType = transactionType;
+        if (transactionAmount != null) this.transactionAmount = transactionAmount;
+        if (transactionDate != null) this.transactionDate = transactionDate;
+        if (transactionDescription != null) this.transactionDescription = transactionDescription;
+    }
 }
