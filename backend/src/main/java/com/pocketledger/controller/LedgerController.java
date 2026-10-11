@@ -5,37 +5,38 @@
     Create User and Transaction in Terminal:
     1. Start backend
     2. In terminal cd to backend folder
-    3. To Create User Type On The Same line:
+
+    3. To Create User:
 
     NOTE: Omit curly braces around put here labels
     Windows Command:
-                            $user = Invoke-RestMethod -Method Post
-                            -Uri "http://localhost:8080/api/users"
-                            -ContentType "application/json"
-                            -Body '{"email":"{put email here}","passwordHash":"{put password here}"}'
+                $user = Invoke-RestMethod -Method Post
+                -Uri "http://localhost:8080/api/users"
+                -ContentType "application/json"
+                -Body '{"email":"{put email here}","passwordHash":"{put password here}"}'
+
+    One Line for Convenience:
+    $user = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users" -ContentType "application/json" -Body '{"email":"{put email here}","passwordHash":"{put password here}"}'
 
     Mac Command:
                             curl -X POST http://localhost:8080/api/users \
                             -H "Content-Type: application/json" \
                             -d '{"email":"{put email here}","passwordHash":"{put password here}"}'
 
-    Response:
-    {
-        "userId": {id},
-        "email": "{email}"
-    }
-
-    4. To Create Transaction Type On The Same Line:
+    4. To Create Transaction:
 
     NOTE: Omit curly braces around put here labels
     Windows Command:
-                            Invoke-RestMethod -Method Post
-                            -Uri "http://localhost:8080/api/users/{put user id here}/transactions"
-                            -ContentType "application/json"
-                            -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
+                Invoke-RestMethod -Method Post
+                -Uri "http://localhost:8080/api/users/{put user id here}/transactions"
+                -ContentType "application/json"
+                -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
+
+    One line for Convenvience:
+    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/{put user id here}/transactions" -ContentType "application/json" -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
     Mac Command:
-                            curl -X POST http://localhost:8080/api/users/{put user id here}/transactions \
+                curl -X POST http://localhost:8080/api/users/{put user id here}/transactions \
                             -H "Content-Type: application/json" \
                             -d '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
@@ -50,6 +51,53 @@
         "description": "{description}"
     }
 
+    5. To Delete Transaction:
+
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                Invoke-RestMethod -Method Delete
+                -Uri "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    One Line for Convenience:
+    Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    Mac Command:
+                curl -X DELETE "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    6. To Edit Transaction:
+
+    NOTE: Omit curly braces around put here labels. Include only the fields you want to update in the body.
+    Windows Command:
+                Invoke-RestMethod -Method Patch
+                -Uri "http://localhost:8080/api/users/{put userId here}/transactions/{put transactionId here}"
+                -ContentType "application/json"
+                -Body '{"amount":{put amount here},"description":"{put description here}"}'
+
+    One Line for Convenience:
+    Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/{userId}/transactions/{transactionId}" -ContentType "application/json" -Body '{"amount":85.50,"description":"Updated description"}'
+
+    Mac Command:
+                curl -X PATCH "http://localhost:8080/api/users/{put userId here}/transactions/{put transactionId here}" \
+                            -H "Content-Type: application/json" \
+                            -d '{"amount":85.50,"description":"Updated description"}'
+
+    7. To Delete User And Their Transactions:
+
+    NOTE: Omit curly braces around put here labels.
+    Windows Command:
+                Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/{put userID here}"
+
+    Mac Command:
+                curl -X DELETE "http://localhost:8080/api/users/{put userID here}"
+
+    8. To Get Transactions By Type:
+
+    NOTE: Omit curly braces around put here labels.
+    Windows Command:
+                Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/{put userId here}/transactions/type/{put type here}"
+
+    Mac Command:
+                curl -X GET "http://localhost:8080/api/users/{put userId here}/transactions/type/{put type here}"
 */
 
 package com.pocketledger.controller;
@@ -58,8 +106,8 @@ import com.pocketledger.model.Transaction;
 import com.pocketledger.model.User;
 import com.pocketledger.repository.TransactionRepository;
 import com.pocketledger.repository.UserRepository;
-//Database classes
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -82,7 +130,10 @@ public class LedgerController {
         this.transactionRepository = transactionRepository;
     }
 
-    //Save created user in Supabase
+    /*
+    Stores created user in Supabase
+    @Return: UserResponse object (Contains: userID, email)
+     */
     @PostMapping("/users")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse createUser(@RequestBody CreateUserRequest request) {
@@ -91,10 +142,24 @@ public class LedgerController {
     }
 
     /*
-        Add a transaction to the transactions table.
-        1. Ensures user exists
-        2. Creates transaction associated with that user.
-        3. Returns the saved record.
+    Delete user by ID and all transactions tied to the user by userID
+    @Return: no object Status: 204, No Content
+     */
+    @DeleteMapping("/users/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Transactional
+    public void deleteUserById(@PathVariable Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        List<Transaction> transactions = transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
+        transactionRepository.deleteAll(transactions);
+        userRepository.delete(user);
+    }
+
+    /*
+    Stores created transaction in Supabase
+    @Return: TransactionResponse object (Contains: transactionID, userID, name, type, amount, data, description)
      */
     @PostMapping("/users/{userId}/transactions")
     @ResponseStatus(HttpStatus.CREATED)
@@ -112,12 +177,64 @@ public class LedgerController {
         return toResponse(saved);
     }
 
-    //Calls repository query and converts each result into an API response
+    /*
+    Gets user transactions by userId
+    @Return: List<TransactionResponse>
+    */
     @GetMapping("/users/{userId}/transactions")
     public List<TransactionResponse> getTransactions(@PathVariable Long userId) {
         return transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId)
                 .stream().map(LedgerController::toResponse).toList();
     }
+
+    /*
+    Categorization Query:
+    Get transactions matching both the user ID and transaction type
+    @Returns: List<TransactionResponse> (of all the same type and user)
+    */
+    @GetMapping("/users/{userId}/transactions/type/{type}")
+    public List<TransactionResponse> getTransactionsByType(@PathVariable Long userId,
+                                                           @PathVariable String type) {
+        return transactionRepository
+                .findByUser_UserIdAndTransactionTypeOrderByTransactionDateDesc(userId, type)
+                .stream().map(LedgerController::toResponse).toList();
+    }
+
+    /*
+    Update only the supplied details of a transaction owned by this user
+    @Returns: TransactionResponse (Contains: transactionID, userID, name, type, amount, data, description)
+    */
+    @PatchMapping("/users/{userId}/transactions/{transactionId}")
+    public TransactionResponse updateTransaction(@PathVariable Long userId,
+                                                 @PathVariable Long transactionId,
+                                                 @RequestBody UpdateTransactionRequest request) {
+        Transaction transaction = transactionRepository.findByUser_UserIdAndTransactionId(userId, transactionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
+
+        transaction.updateDetails(
+                request.name(),
+                request.type(),
+                request.amount(),
+                request.date(),
+                request.description()
+        );
+        Transaction saved = transactionRepository.save(transaction);
+        return toResponse(saved);
+    }
+
+    /*
+    Delete the transaction identified by its ID and userId
+    @Returns: no object Status: 204, No Content
+    */
+    @DeleteMapping("/users/{userId}/transactions")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteTransactionById(@PathVariable Long userId, @RequestParam Long transactionId) {
+        Transaction transaction = transactionRepository.findByUser_UserIdAndTransactionId(userId, transactionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
+
+        transactionRepository.delete(transaction);
+    }
+
 
     //toResponse: Copies the response from Supabase into a transaction record, avoids using JSON.
     private static TransactionResponse toResponse(Transaction transaction) {
@@ -136,6 +253,8 @@ public class LedgerController {
     public record CreateUserRequest(String email, String passwordHash) {}
     public record UserResponse(Long userId, String email) {}
     public record CreateTransactionRequest(String name, String type, BigDecimal amount,
+                                           LocalDate date, String description) {}
+    public record UpdateTransactionRequest(String name, String type, BigDecimal amount,
                                            LocalDate date, String description) {}
     public record TransactionResponse(Long transactionId, Long userId, String name, String type,
                                       BigDecimal amount, LocalDate date, String description) {}
