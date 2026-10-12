@@ -17,6 +17,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.Locale;
 
 @Entity
 @Table(name = "users")
@@ -39,7 +40,8 @@ public class User {
 
     //Constructor to create user before saving
     public User(String userEmail, String passwordHash) {
-        this.userEmail = userEmail;
+        // Keep email storage consistent regardless of which controller creates the user.
+        this.userEmail = userEmail.strip().toLowerCase(Locale.ROOT);
         this.passwordHash = passwordHash;
     }
 
