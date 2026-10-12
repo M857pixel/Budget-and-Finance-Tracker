@@ -62,6 +62,39 @@ function App() {
             setMessage('Could not connect to the backend.')
         }
     }
+    // connect to FileUploadController in backend to allow file uploads
+    const [selectedFile, setSelectedFile] = useState<File | null>(null)
+    const [uploading, setUploading] = useState(false)
+
+    const uploadFile = async () => {
+        if (!selectedFile) return
+
+        const formData = new FormData()
+        formData.append('file', selectedFile)
+
+        setUploading(true)
+        setMessage('')
+        try {
+            const response = await fetch(
+                `http://${window.location.hostname}:8080/api/import`,
+                {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: formData,
+                },
+            )
+
+            setMessage(
+                response.ok
+                    ? `Uploaded ${selectedFile.name}.`
+                    : `Upload failed (${response.status}).`,
+            )
+        } catch {
+            setMessage('Could not connect to the backend.')
+        } finally {
+            setUploading(false)
+        }
+    }
 
     // checks the backend connection and displays its response
     const testBackend = async () => {
@@ -182,7 +215,32 @@ function App() {
                 {/* placeholders for future functionality*/}
                 {activeTab === 'modify' && <p>Modify Transaction UI goes here.</p>}
                 {activeTab === 'history' && <p>Transaction History UI goes here.</p>}
-                {activeTab === 'import' && <p>Import CSV UI goes here.</p>}
+                {/*Import CSV file ui (can be replaced)*/}
+                {activeTab === 'import' && (
+                    <section>
+                        <label>
+                            Select a file
+                            <input
+                                type="file"
+                                disabled={uploading}
+                                onChange={(event) => {
+                                    setSelectedFile(event.target.files?.[0] ?? null)
+                                    setMessage('')
+                                }}
+                            />
+                        </label>
+
+                        <button
+                            type="button"
+                            disabled={!selectedFile || uploading}
+                            onClick={() => void uploadFile()}
+                        >
+                            {uploading ? 'Uploading…' : 'Upload file'}
+                        </button>
+
+                        <p role="status">{message}</p>
+                    </section>
+                )}
             </section>
         </main>
     )
