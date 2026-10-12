@@ -14,7 +14,9 @@ function App() {
         setIsLoggingIn(true)
         try {
             // Send the email and password so the backend can check the users table.
-            const response = await fetch('http://localhost:8080/api/login', {
+            const response = await fetch(`http://${window.location.hostname}:8080/api/login`, {
+                // Accept and send the backend session cookie for requests across ports.
+                credentials: 'include',
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 // Remove spaces around the email; send the password as typed.
@@ -22,10 +24,18 @@ function App() {
             })
             // 200 means login succeeded; 401 or 403 means login was rejected.
             if (response.status === 200) {
+                // Keep the database user ID available for future transaction requests.
+                // The server session, rather than this browser value, verifies account access.
+                const user: { userId: number; email: string; created: boolean } = await response.json()
+                sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
                 setPassword('')
                 setIsLoggedIn(true)
             } else if (response.status === 401 || response.status === 403) {
                 setLoginError('Incorrect email or password.')
+            } else if (response.status === 400) {
+                setLoginError('Enter a valid email and a password of at most 256 characters.')
+            } else if (response.status === 409) {
+                setLoginError('Account creation failed. Please try logging in again.')
             } else if (response.status === 404 || response.status === 405) {
                 setLoginError('The backend login endpoint is not available yet.')
             } else {
@@ -120,14 +130,14 @@ function App() {
                         onChange={(event) => setEmail(event.target.value)} />
                     <label htmlFor="login-password">Password</label>
                     <input id="login-password" type="password" autoComplete="current-password"
-                        required disabled={isLoggingIn} value={password}
+                        required maxLength={256} disabled={isLoggingIn} value={password}
                         onChange={(event) => setPassword(event.target.value)} />
                     <button type="submit" disabled={isLoggingIn}>
                         {isLoggingIn ? 'Logging in?' : 'Log in'}
                     </button>
                     {loginError && <p role="alert">{loginError}</p>}
                 </form>
-                {/* Opens the dashboard without checking login for testing. */}
+                {/* Opens the dashboard for UI testing; it does not log into a database account. */}
                 <button type="button"
                     style={{ position: 'fixed', bottom: '20px', right: '20px' }}
                     onClick={function () { setIsLoggedIn(true) }}>
@@ -140,7 +150,21 @@ function App() {
     return (
         <main className="dashboard">
             <h1>PocketLedger</h1>
-            <button onClick={() => {
+            <button onClick={async () => {
+                // End the backend session before returning the browser to the login form.
+                try {
+                    const response = await fetch(`http://${window.location.hostname}:8080/api/logout`, {
+                        method: 'POST', credentials: 'include',
+                    })
+                    if (!response.ok) {
+                        setMessage('Logout failed. Please try again.')
+                        return
+                    }
+                } catch {
+                    setMessage('Could not connect to the backend.')
+                    return
+                }
+                sessionStorage.removeItem('currentUser')
                 setIsLoggedIn(false)
                 setEmail('')
                 setPassword('')
