@@ -1,6 +1,6 @@
 /*
 
-    This program sends a provided promt to Mistral, prints the raw JSON response,
+    This program sends a provided prompt to Mistral, prints the raw JSON response,
     and saves a formatted copy as response.json in the working directory
 
     Usage:
@@ -14,7 +14,7 @@
             Windows Command Prompt:   set MISTRAL_API_KEY=your-api-key
 
    3.   mvn compile
-        mvn exec:java -Dexec.mainClass=Mistral -Dexec.args="Explain HTTP in one sentence"
+        mvn exec:java -Dexec.mainClass=Mistral -Dexec.args="Example-Query-Goes-Here"
 
  */
 

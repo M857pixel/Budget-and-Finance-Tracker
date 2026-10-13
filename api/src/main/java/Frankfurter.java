@@ -1,13 +1,16 @@
 /*
-    Basic java file that queries the Frankfurter API
+
+    This program gets currecy exchange rates from Frankfurter API and is able to translate between different currencies
 
     Usage:
 
-    javac Frankfurter.java
-    java Frankfurter
+    1. Go to api directory
+
+    2.  mvn compile
+        mvn exec:java -Dexec.mainClass=Frankfurter -Dexec.args="<from-currency> <to-currency> <amount>" // i.e. mvn exec:java -Dexec.mainClass=Frankfurter -Dexec.args="USD EUR 25"
 
 
-*/
+ */
 
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -15,7 +18,7 @@ import java.net.http.HttpResponse;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.util.Locale;
-import java.util.Scanner;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -25,19 +28,28 @@ public class Frankfurter {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     public static void main(String[] args) throws Exception {
-        try (Scanner scanner = new Scanner(System.in)) {
-            String from = selectCurrency(scanner, "Convert from");
-            String to = selectCurrency(scanner, "Convert to");
-
-            System.out.print("Amount: ");
-            BigDecimal amount = new BigDecimal(scanner.nextLine().trim());
-
-            BigDecimal rate = getRate(from, to);
-            BigDecimal converted = amount.multiply(rate);
-
-            System.out.println("Rate: 1 " + from + " = " + rate + " " + to);
-            System.out.println(amount + " " + from + " = " + converted + " " + to);
+        if (args.length != 3) {
+            System.err.println("Usage: Frankfurter <from-currency> <to-currency> <amount>");
+            System.err.println("Example: Frankfurter USD EUR 100");
+            System.exit(1);
         }
+
+        String from = validateCurrencyCode(args[0]);
+        String to = validateCurrencyCode(args[1]);
+
+        BigDecimal amount;
+        try {
+            amount = new BigDecimal(args[2]);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Amount must be a valid number, for example 100 or 12.50", e);
+        }
+
+        BigDecimal rate = getRate(from, to);
+        BigDecimal converted = amount.multiply(rate);
+
+        System.out.println("1 " + from + " = " + rate + " " + to);
+        System.out.println(amount + " " + from + " = " + converted + " " + to);
     }
 
     /** Fetches the latest rate for one currency pair. */
@@ -90,7 +102,7 @@ public class Frankfurter {
             throw new IllegalArgumentException(
                     "Currency code must be three letters, e.g. USD");
         }
-        return code.toUpperCase(Locale.ROOT);
+        return code.toUpperCase();
     }
 
     private static boolean isThreeAsciiLetters(String value) {
@@ -107,17 +119,5 @@ public class Frankfurter {
 
         return true;
     }
-
-    public static String selectCurrency(Scanner scanner, String prompt) {
-        while (true) {
-            System.out.print(prompt + " (e.g. USD, EUR, GBP): ");
-            String currency = scanner.nextLine().trim();
-
-            if (isThreeAsciiLetters(currency)) {
-                return currency.toUpperCase(Locale.ROOT);
-            }
-
-            System.out.println("Enter a three-letter currency code.");
-        }
-    }
 }
+
