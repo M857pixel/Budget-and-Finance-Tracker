@@ -102,6 +102,7 @@
 
 package com.pocketledger.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import com.pocketledger.model.Transaction;
 import com.pocketledger.model.User;
 import com.pocketledger.repository.TransactionRepository;
@@ -117,7 +118,8 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:5173")
+// Allow the local frontend to send its login session cookie across ports.
+@CrossOrigin(origins = {"http://localhost:5173", "http://127.0.0.1:5173"}, allowCredentials = "true")
 public class LedgerController {
 
     //Stores the repositories
@@ -164,7 +166,9 @@ public class LedgerController {
     @PostMapping("/users/{userId}/transactions")
     @ResponseStatus(HttpStatus.CREATED)
     public TransactionResponse createTransaction(@PathVariable Long userId,
-                                                 @RequestBody CreateTransactionRequest request) {
+                                                 @RequestBody CreateTransactionRequest request, HttpServletRequest httpRequest) {
+        // Verify the logged-in account before saving a transaction under the URL user ID.
+        requireUser(userId, httpRequest);
         User user = userRepository.findById(userId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         Transaction saved = transactionRepository.save(new Transaction(
                 user,
@@ -178,11 +182,13 @@ public class LedgerController {
     }
 
     /*
-    Gets user transactions by userId
+    Gets user transactions by userId. The session must match this ID before the
+    repository loads only that user's rows for the Transaction History tab.
     @Return: List<TransactionResponse>
     */
     @GetMapping("/users/{userId}/transactions")
-    public List<TransactionResponse> getTransactions(@PathVariable Long userId) {
+    public List<TransactionResponse> getTransactions(@PathVariable Long userId, HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
         return transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId)
                 .stream().map(LedgerController::toResponse).toList();
     }
@@ -194,7 +200,8 @@ public class LedgerController {
     */
     @GetMapping("/users/{userId}/transactions/type/{type}")
     public List<TransactionResponse> getTransactionsByType(@PathVariable Long userId,
-                                                           @PathVariable String type) {
+                                                           @PathVariable String type, HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
         return transactionRepository
                 .findByUser_UserIdAndTransactionTypeOrderByTransactionDateDesc(userId, type)
                 .stream().map(LedgerController::toResponse).toList();
@@ -207,7 +214,8 @@ public class LedgerController {
     @PatchMapping("/users/{userId}/transactions/{transactionId}")
     public TransactionResponse updateTransaction(@PathVariable Long userId,
                                                  @PathVariable Long transactionId,
-                                                 @RequestBody UpdateTransactionRequest request) {
+                                                 @RequestBody UpdateTransactionRequest request, HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
         Transaction transaction = transactionRepository.findByUser_UserIdAndTransactionId(userId, transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
 
@@ -228,13 +236,29 @@ public class LedgerController {
     */
     @DeleteMapping("/users/{userId}/transactions")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteTransactionById(@PathVariable Long userId, @RequestParam Long transactionId) {
+    public void deleteTransactionById(@PathVariable Long userId, @RequestParam Long transactionId, HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
         Transaction transaction = transactionRepository.findByUser_UserIdAndTransactionId(userId, transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
 
         transactionRepository.delete(transaction);
     }
 
+
+    // Used by each transaction endpoint before database access. AuthController stores
+    // userId in the server session at login; changing the URL must not grant access
+    // to another account's transactions.
+    private static void requireUser(Long userId, HttpServletRequest request) {
+        // Read an existing session without creating one for an unauthenticated request.
+        var session = request.getSession(false);
+        Object authenticatedUserId = session == null ? null : session.getAttribute("userId");
+        if (authenticatedUserId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Please log in.");
+        }
+        if (!userId.equals(authenticatedUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This account does not own these transactions.");
+        }
+    }
 
     //toResponse: Copies the response from Supabase into a transaction record, avoids using JSON.
     private static TransactionResponse toResponse(Transaction transaction) {

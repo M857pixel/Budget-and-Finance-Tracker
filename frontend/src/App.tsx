@@ -1,8 +1,25 @@
 import './App.css'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 // array of selectable transaction types
 const transactionTypes = ['Groceries', 'Salary', 'Rent', 'Other' ]
+
+// Matches the transaction response returned by LedgerController; date is yyyy-MM-dd.
+type Transaction = {
+    transactionId: number
+    userId: number
+    name: string
+    type: string
+    amount: number
+    date: string
+    description: string | null
+}
+
+// Construct a local calendar date so time zones cannot shift the displayed day.
+const displayDate = (date: string) => {
+    const [year, month, day] = date.split('-').map(Number)
+    return new Date(year, month - 1, day).toLocaleDateString()
+}
 
 function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -64,6 +81,47 @@ function App() {
     const [isSaving, setIsSaving] = useState(false)
     const [activeTab, setActiveTab] = useState<'add' | 'modify' | 'history' | 'import'>('add')
 
+    // Keep saved history and its loading feedback separate from the add form.
+    const [transactions, setTransactions] = useState<Transaction[]>([])
+    const [historyError, setHistoryError] = useState('')
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+
+    // Reload from the database whenever history opens or the logged-in user changes.
+    useEffect(() => {
+        if (activeTab !== 'history' || currentUserId === null) return
+        const controller = new AbortController()
+        const loadHistory = async () => {
+            setTransactions([])
+            setHistoryError('')
+            setIsLoadingHistory(true)
+            try {
+                const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions`, {
+                    // Send the login cookie so LedgerController can verify the requested user ID.
+                    credentials: 'include', signal: controller.signal,
+                })
+                if (!response.ok) {
+                    throw new Error(response.status === 401 || response.status === 403
+                        ? 'Please log in again to view your transactions.'
+                        : 'Could not load transactions. Reopen this tab to try again.')
+                }
+                const saved: Transaction[] = await response.json()
+                if (!controller.signal.aborted) {
+                    // Only display matching rows; the backend also enforces ownership.
+                    setTransactions(saved.filter((transaction) => transaction.userId === currentUserId))
+                }
+            } catch (error) {
+                if (!controller.signal.aborted) {
+                    setHistoryError(error instanceof Error ? error.message : 'Could not load transactions.')
+                }
+            } finally {
+                if (!controller.signal.aborted) setIsLoadingHistory(false)
+            }
+        }
+        void loadHistory()
+        // Cancel stale requests when leaving the tab or changing accounts.
+        return () => controller.abort()
+    }, [activeTab, currentUserId])
+
     const resetTransaction = () => {
         setAmount('')
         setAmountSign(-1)
@@ -87,13 +145,15 @@ function App() {
         setIsSaving(true)
         try {
             const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions`, {
-                // LedgerController currently allows cross-origin requests without cookies.
+                // Authenticate this save with the session created during login.
+                credentials: 'include',
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: transactionName.trim(),
                     type: transactionType,
                     amount: amountSign * Number(amount),
+                    // A date input keeps its localized display but returns yyyy-MM-dd.
                     date: transactionDate,
                     description: transactionDescription.trim() || null,
                 }),
@@ -203,6 +263,9 @@ function App() {
                     return
                 }
                 sessionStorage.removeItem('currentUser')
+                // Clear saved history when logging out so it cannot carry over to another account.
+                setTransactions([])
+                setHistoryError('')
                 setCurrentUserId(null)
                 setIsLoggedIn(false)
                 setEmail('')
@@ -306,7 +369,33 @@ function App() {
 
                 {/* placeholders for future functionality*/}
                 {activeTab === 'modify' && <p>Modify Transaction UI goes here.</p>}
-                {activeTab === 'history' && <p>Transaction History UI goes here.</p>}
+                {/* Show saved fields with localized dates and currency, plus loading and empty states. */}
+                {activeTab === 'history' && (
+                    <section className="transaction-history">
+                        <h2>Transaction History</h2>
+                        {currentUserId === null ? <p>Please log in to view your saved transactions.</p>
+                            : isLoadingHistory ? <p role="status">Loading transactions...</p>
+                            : historyError ? <p role="alert">{historyError}</p>
+                            : transactions.length === 0 ? <p>No transactions saved yet.</p>
+                            : <div className="history-table-container">
+                                <table>
+                                    <thead><tr>
+                                        <th scope="col">Name</th><th scope="col">Transaction type</th>
+                                        <th scope="col">Amount</th><th scope="col">Date</th><th scope="col">Description</th>
+                                    </tr></thead>
+                                    <tbody>{transactions.map((transaction) => (
+                                        <tr key={transaction.transactionId}>
+                                            <td>{transaction.name}</td>
+                                            <td>{transaction.type}</td>
+                                            <td>{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(transaction.amount)}</td>
+                                            <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
+                                            <td>{transaction.description || '—'}</td>
+                                        </tr>
+                                    ))}</tbody>
+                                </table>
+                            </div>}
+                    </section>
+                )}
                 {/*Import CSV file ui (can be replaced)*/}
                 {activeTab === 'import' && (
                     <section>

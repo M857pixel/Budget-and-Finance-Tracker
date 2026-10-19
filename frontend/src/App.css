@@ -293,3 +293,24 @@ textarea:focus-visible {
     padding: 16px;
   }
 }
+
+.history-table-container {
+  overflow-x: auto;
+}
+
+.transaction-history table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.transaction-history th,
+.transaction-history td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.transaction-history time {
+  white-space: nowrap;
+}
