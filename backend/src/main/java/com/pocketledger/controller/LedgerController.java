@@ -13,17 +13,35 @@
                 $user = Invoke-RestMethod -Method Post
                 -Uri "http://localhost:8080/api/users"
                 -ContentType "application/json"
-                -Body '{"email":"{put email here}","passwordHash":"{put password here}"}'
+                -Body '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
     One Line for Convenience:
-    $user = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users" -ContentType "application/json" -Body '{"email":"{put email here}","passwordHash":"{put password here}"}'
+    $user = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users" -ContentType "application/json" -Body '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
     Mac Command:
                             curl -X POST http://localhost:8080/api/users \
                             -H "Content-Type: application/json" \
-                            -d '{"email":"{put email here}","passwordHash":"{put password here}"}'
+                            -d '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
-    4. To Create Transaction:
+    4. To Authorize A User By Email And Password Hash:
+
+    Windows Command:
+    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/login" -ContentType "application/json" -Body '{"email":"{put email here}","passwordHash":"{put password hash here}"}'
+
+    Mac Command:
+    curl -X POST "http://localhost:8080/api/users/login" \\
+        -H "Content-Type: application/json" \\
+        -d '{"email":"{put email here}","passwordHash":"{put password hash here}"}'
+
+    5. To Check Whether A User Exists By Email:
+
+    Windows Command:
+    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users?email={put email here}"
+
+    Mac Command:
+    curl -X GET "http://localhost:8080/api/users?email={put email here}"
+
+    6. To Create Transaction:
 
     NOTE: Omit curly braces around put here labels
     Windows Command:
@@ -51,7 +69,7 @@
         "description": "{description}"
     }
 
-    5. To Delete Transaction:
+    7. To Delete Transaction:
 
     NOTE: Omit curly braces around put here labels
     Windows Command:
@@ -64,7 +82,7 @@
     Mac Command:
                 curl -X DELETE "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
 
-    6. To Edit Transaction:
+    8. To Edit Transaction:
 
     NOTE: Omit curly braces around put here labels. Include only the fields you want to update in the body.
     Windows Command:
@@ -81,7 +99,7 @@
                             -H "Content-Type: application/json" \
                             -d '{"amount":85.50,"description":"Updated description"}'
 
-    7. To Delete User And Their Transactions:
+    9. To Delete User And Their Transactions:
 
     NOTE: Omit curly braces around put here labels.
     Windows Command:
@@ -90,7 +108,7 @@
     Mac Command:
                 curl -X DELETE "http://localhost:8080/api/users/{put userID here}"
 
-    8. To Get Transactions By Type:
+    10. To Get Transactions By Type:
 
     NOTE: Omit curly braces around put here labels.
     Windows Command:
@@ -98,6 +116,7 @@
 
     Mac Command:
                 curl -X GET "http://localhost:8080/api/users/{put userId here}/transactions/type/{put type here}"
+
 */
 
 package com.pocketledger.controller;
@@ -132,13 +151,15 @@ public class LedgerController {
 
     /*
     Stores created user in Supabase
-    @Return: UserResponse object (Contains: userID, email)
+    @Return: UserResponse object (Contains: userID, email, firstName, lastName, balance)
      */
     @PostMapping("/users")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse createUser(@RequestBody CreateUserRequest request) {
-        User saved = userRepository.save(new User(request.email(), request.passwordHash()));
-        return new UserResponse(saved.getUserId(), saved.getUserEmail()); //Return user ID and email
+        User saved = userRepository.save(new User(request.email(), request.passwordHash(),
+                request.firstName(), request.lastName(), request.balance()));
+        return new UserResponse(saved.getUserId(), saved.getUserEmail(), saved.getFirstName(),
+                saved.getLastName(), saved.getBalance());
     }
 
     /*
@@ -249,9 +270,12 @@ public class LedgerController {
         );
     }
 
-    //Sping Boot uses these data containers to convert between JSON and Java objects
-    public record CreateUserRequest(String email, String passwordHash) {}
-    public record UserResponse(Long userId, String email) {}
+    //SpingBoot uses these data containers to convert between JSON and Java objects
+    public record CreateUserRequest(String email, String passwordHash, String firstName,
+                                    String lastName, BigDecimal balance) {}
+    public record GetUserRequest(String email, String passwordHash) {}
+    public record UserResponse(Long userId, String email, String firstName,
+                               String lastName, BigDecimal balance) {}
     public record CreateTransactionRequest(String name, String type, BigDecimal amount,
                                            LocalDate date, String description) {}
     public record UpdateTransactionRequest(String name, String type, BigDecimal amount,

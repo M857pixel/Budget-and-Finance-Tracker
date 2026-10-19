@@ -17,6 +17,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.util.Locale;
 
 @Entity
@@ -35,6 +36,15 @@ public class User {
     @Column(name = "user_password_hash", nullable = false, length = 100)
     private String passwordHash;
 
+    @Column(name = "first_name", length = 20)
+    private String firstName;
+
+    @Column(name = "last_name", length = 20)
+    private String lastName;
+
+    @Column(name = "balance", precision = 12, scale = 2)
+    private BigDecimal balance;
+
     //JPA needs a no argument constructor to create users when reading rows
     protected User() {}
 
@@ -45,8 +55,18 @@ public class User {
         this.passwordHash = passwordHash;
     }
 
+    public User(String userEmail, String passwordHash, String firstName, String lastName, BigDecimal balance) {
+        this(userEmail, passwordHash);
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.balance = balance;
+    }
+
     //Getters
     public Long getUserId() { return userId; }
     public String getUserEmail() { return userEmail; }
     public String getPasswordHash() { return passwordHash; }
+    public String getFirstName() { return firstName; }
+    public String getLastName() { return lastName; }
+    public BigDecimal getBalance() { return balance; }
 }
