@@ -36,13 +36,13 @@ public class User {
     @Column(name = "user_password_hash", nullable = false, length = 100)
     private String passwordHash;
 
-    @Column(name = "first_name", length = 20)
+    @Column(name = "user_firstname", length = 20)
     private String firstName;
 
-    @Column(name = "last_name", length = 20)
+    @Column(name = "user_lastname", length = 20)
     private String lastName;
 
-    @Column(name = "balance", precision = 12, scale = 2)
+    @Column(name = "user_balance", precision = 12, scale = 2)
     private BigDecimal balance;
 
     //JPA needs a no argument constructor to create users when reading rows
