@@ -90,7 +90,28 @@ textarea:focus-visible {
   outline-offset: 3px;
 }
 
-/* centers the dashboard & limits how wide it can get */
+/* centers the login and create account screens */
+.auth-screen {
+  width: min(440px, 100%);
+  margin: auto;
+  padding: 24px;
+}
+
+.auth-screen input {
+  width: 100%;
+  min-width: 0;
+}
+
+.auth-secondary {
+  background: var(--accent-bg);
+  color: #172033;
+}
+
+.auth-note {
+  font-size: 0.9rem;
+  color: #334155;
+}
+
 .dashboard {
   max-width: 1000px;
   margin: 0 auto;
@@ -236,7 +257,7 @@ textarea:focus-visible {
   color: #334155;
 }
 
-/* Keeps the backend test button separate from the transaction form. */
+/* space around the backend test button */
 .actions {
   display: flex;
   flex-wrap: wrap;

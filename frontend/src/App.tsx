@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 // array of selectable transaction types
 const transactionTypes = ['Groceries', 'Salary', 'Rent', 'Other' ]
 
-// Matches the transaction response returned by LedgerController; date is yyyy-MM-dd.
+// transaction fields returned by the backend
 type Transaction = {
     transactionId: number
     userId: number
@@ -15,7 +15,7 @@ type Transaction = {
     description: string | null
 }
 
-// Construct a local calendar date so time zones cannot shift the displayed day.
+// format the date without shifting the day
 const displayDate = (date: string) => {
     const [year, month, day] = date.split('-').map(Number)
     return new Date(year, month - 1, day).toLocaleDateString()
@@ -28,40 +28,63 @@ function App() {
     const [password, setPassword] = useState('')
     const [loginError, setLoginError] = useState('')
     const [isLoggingIn, setIsLoggingIn] = useState(false)
+    const [authScreen, setAuthScreen] = useState<'login' | 'create'>('login')
+    const [firstName, setFirstName] = useState('')
+    const [lastName, setLastName] = useState('')
+    const meetsPasswordRequirements = password.length >= 8
+        && /[A-Z]/.test(password)
+        && /[0-9]/.test(password)
+        && /[^\p{L}\p{N}\s]/u.test(password)
+
+    const switchAuthScreen = () => {
+        setAuthScreen((screen) => screen === 'login' ? 'create' : 'login')
+        setLoginError('')
+        setPassword('')
+        setFirstName('')
+        setLastName('')
+    }
 
     const login = async () => {
         if (isLoggingIn) return
         setLoginError('')
+        if (authScreen === 'create' && (!firstName.trim() || !lastName.trim())) {
+            setLoginError('Enter your first and last name.')
+            return
+        }
+        if (authScreen === 'create' && !meetsPasswordRequirements) {
+            setLoginError('Use at least 8 characters, including an uppercase letter, a number, and a symbol.')
+            return
+        }
         setIsLoggingIn(true)
         try {
             // send email and password so the backend can check against users table
             const response = await fetch(`http://${window.location.hostname}:8080/api/login`, {
-                // Accept and send the backend session cookie for requests across ports.
+                // send and accept the login cookie
                 credentials: 'include',
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                // remove spaces around the email and send password
                 body: JSON.stringify({ email: email.trim(), password }),
             })
-            // 200 means login succeeded; 401 or 403 means login was rejected.
             if (response.status === 200) {
-                // keep the database user ID available for future transaction requests.
-                // server session verifies account access.
+                // keep the user ID for transaction requests
                 const user: { userId: number; email: string; created: boolean } = await response.json()
                 sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
                 setCurrentUserId(user.userId)
                 setPassword('')
+                setFirstName('')
+                setLastName('')
+                setAuthScreen('login')
                 setIsLoggedIn(true)
             } else if (response.status === 401 || response.status === 403) {
                 setLoginError('Incorrect email or password.')
             } else if (response.status === 400) {
-                setLoginError('Enter a valid email and a password of at most 256 characters.')
+                setLoginError('Enter a valid email and password, each at most 50 characters.')
             } else if (response.status === 409) {
                 setLoginError('Account creation failed. Please try logging in again.')
             } else if (response.status === 404 || response.status === 405) {
                 setLoginError('The backend login endpoint is not available yet.')
             } else {
-                setLoginError('Login failed. Please try again.')
+                setLoginError('Could not complete your request. Please try again.')
             }
         } catch {
             setLoginError('Could not connect to the backend.')
@@ -81,12 +104,12 @@ function App() {
     const [isSaving, setIsSaving] = useState(false)
     const [activeTab, setActiveTab] = useState<'add' | 'modify' | 'history' | 'import'>('add')
 
-    // Keep saved history and its loading feedback separate from the add form.
+    // saved transactions and history feedback
     const [transactions, setTransactions] = useState<Transaction[]>([])
     const [historyError, setHistoryError] = useState('')
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
-    // Reload from the database whenever history opens or the logged-in user changes.
+    // load history when the tab opens or the user changes
     useEffect(() => {
         if (activeTab !== 'history' || currentUserId === null) return
         const controller = new AbortController()
@@ -96,7 +119,7 @@ function App() {
             setIsLoadingHistory(true)
             try {
                 const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions`, {
-                    // Send the login cookie so LedgerController can verify the requested user ID.
+                    // send the login cookie to check account access
                     credentials: 'include', signal: controller.signal,
                 })
                 if (!response.ok) {
@@ -106,7 +129,7 @@ function App() {
                 }
                 const saved: Transaction[] = await response.json()
                 if (!controller.signal.aborted) {
-                    // Only display matching rows; the backend also enforces ownership.
+                    // show transactions for the current user
                     setTransactions(saved.filter((transaction) => transaction.userId === currentUserId))
                 }
             } catch (error) {
@@ -118,7 +141,7 @@ function App() {
             }
         }
         void loadHistory()
-        // Cancel stale requests when leaving the tab or changing accounts.
+        // cancel the request when leaving history or switching users
         return () => controller.abort()
     }, [activeTab, currentUserId])
 
@@ -145,7 +168,7 @@ function App() {
         setIsSaving(true)
         try {
             const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions`, {
-                // Authenticate this save with the session created during login.
+                // send the login cookie when saving
                 credentials: 'include',
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -153,7 +176,6 @@ function App() {
                     name: transactionName.trim(),
                     type: transactionType,
                     amount: amountSign * Number(amount),
-                    // A date input keeps its localized display but returns yyyy-MM-dd.
                     date: transactionDate,
                     description: transactionDescription.trim() || null,
                 }),
@@ -206,7 +228,6 @@ function App() {
 
     // checks the backend connection and displays its response
     const testBackend = async () => {
-        // Ask for a connection message; no input values are sent.
         const response = await fetch('http://localhost:8080/api/hello')
         const text = await response.text()
         setMessage(text)
@@ -214,33 +235,49 @@ function App() {
 
     if (!isLoggedIn) {
         return (
-            <main style={{ width: 'min(360px, 100%)', margin: 'auto', padding: '24px', boxSizing: 'border-box' }}>
+            <main className="auth-screen">
                 <h1>PocketLedger</h1>
-                <h2>Log in</h2>
+                <h2>{authScreen === 'create' ? 'Create account' : 'Log in'}</h2>
                 <form style={{ display: 'grid', gap: '16px', textAlign: 'left', marginTop: '24px' }}
                     onSubmit={(event) => {
                         event.preventDefault()
                         void login()
                     }}>
+                    {authScreen === 'create' && (
+                        <>
+                            <label htmlFor="first-name">First name</label>
+                            <input id="first-name" autoComplete="given-name" required maxLength={50}
+                                disabled={isLoggingIn} value={firstName}
+                                onChange={(event) => setFirstName(event.target.value)} />
+                            <label htmlFor="last-name">Last name</label>
+                            <input id="last-name" autoComplete="family-name" required maxLength={50}
+                                disabled={isLoggingIn} value={lastName}
+                                onChange={(event) => setLastName(event.target.value)} />
+                        </>
+                    )}
                     <label htmlFor="login-email">Email</label>
                     <input id="login-email" type="email" autoComplete="username"
-                        maxLength={100} required disabled={isLoggingIn} value={email}
+                        maxLength={50} required disabled={isLoggingIn} value={email}
                         onChange={(event) => setEmail(event.target.value)} />
                     <label htmlFor="login-password">Password</label>
-                    <input id="login-password" type="password" autoComplete="current-password"
-                        required maxLength={256} disabled={isLoggingIn} value={password}
+                    <input id="login-password" type="password" autoComplete={authScreen === 'create' ? 'new-password' : 'current-password'}
+                        minLength={authScreen === 'create' ? 8 : undefined}
+                        aria-describedby={authScreen === 'create' ? 'password-requirements' : undefined}
+                        required maxLength={50} disabled={isLoggingIn} value={password}
                         onChange={(event) => setPassword(event.target.value)} />
-                    <button type="submit" disabled={isLoggingIn}>
-                        {isLoggingIn ? 'Logging in?' : 'Log in'}
+                    {authScreen === 'create' && (
+                        <p id="password-requirements" className="auth-note">
+                            Use 8–50 characters with at least one uppercase letter, one number, and one symbol (e.g. !, @, #).
+                        </p>
+                    )}
+                    <button type="submit" disabled={isLoggingIn || (authScreen === 'create' && !meetsPasswordRequirements)}>
+                        {isLoggingIn ? (authScreen === 'create' ? 'Creating account...' : 'Logging in...') : (authScreen === 'create' ? 'Create account' : 'Log in')}
+                    </button>
+                    <button type="button" className="auth-secondary" disabled={isLoggingIn} onClick={switchAuthScreen}>
+                        {authScreen === 'create' ? 'Back to log in' : 'Create account'}
                     </button>
                     {loginError && <p role="alert">{loginError}</p>}
                 </form>
-                {/* bypass login to view dashboard, does not log into a database account. */}
-                <button type="button"
-                    style={{ position: 'fixed', bottom: '20px', right: '20px' }}
-                    onClick={function () { setIsLoggedIn(true) }}>
-                    Skip login for testing
-                </button>
             </main>
         )
     }
@@ -249,7 +286,7 @@ function App() {
         <main className="dashboard">
             <h1>PocketLedger</h1>
             <button onClick={async () => {
-                // End the backend session before returning the browser to the login form.
+                // end the session before returning to login
                 try {
                     const response = await fetch(`http://${window.location.hostname}:8080/api/logout`, {
                         method: 'POST', credentials: 'include',
@@ -263,7 +300,7 @@ function App() {
                     return
                 }
                 sessionStorage.removeItem('currentUser')
-                // Clear saved history when logging out so it cannot carry over to another account.
+                // clear history when logging out
                 setTransactions([])
                 setHistoryError('')
                 setCurrentUserId(null)
@@ -369,7 +406,7 @@ function App() {
 
                 {/* placeholders for future functionality*/}
                 {activeTab === 'modify' && <p>Modify Transaction UI goes here.</p>}
-                {/* Show saved fields with localized dates and currency, plus loading and empty states. */}
+                {/* saved transaction history */}
                 {activeTab === 'history' && (
                     <section className="transaction-history">
                         <h2>Transaction History</h2>
@@ -396,7 +433,7 @@ function App() {
                             </div>}
                     </section>
                 )}
-                {/*Import CSV file ui (can be replaced)*/}
+                {/* import CSV file */}
                 {activeTab === 'import' && (
                     <section>
                         <label>
