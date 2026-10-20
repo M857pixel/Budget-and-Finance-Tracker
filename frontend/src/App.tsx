@@ -2,7 +2,7 @@ import './App.css'
 import { useEffect, useState } from 'react'
 
 // array of selectable transaction types
-const transactionTypes = ['Groceries', 'Salary', 'Rent', 'Other' ]
+const transactionTypes = ['Clothing', 'Entertainment', 'Transport', 'Groceries', 'Salary', 'Rent', 'Other' ]
 
 // transaction fields returned by the backend
 type Transaction = {
@@ -44,7 +44,7 @@ function App() {
         setLastName('')
     }
 
-    const login = async () => {
+    const submitAuth = async () => {
         if (isLoggingIn) return
         setLoginError('')
         if (authScreen === 'create' && (!firstName.trim() || !lastName.trim())) {
@@ -57,17 +57,19 @@ function App() {
         }
         setIsLoggingIn(true)
         try {
-            // send email and password so the backend can check against users table
-            const response = await fetch(`http://${window.location.hostname}:8080/api/login`, {
+            const isCreatingAccount = authScreen === 'create'
+            const response = await fetch(`http://${window.location.hostname}:8080/api/${isCreatingAccount ? 'register' : 'login'}`, {
                 // send and accept the login cookie
                 credentials: 'include',
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: email.trim(), password }),
+                body: JSON.stringify(isCreatingAccount
+                    ? { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), password }
+                    : { email: email.trim(), password }),
             })
-            if (response.status === 200) {
+            if (response.ok) {
                 // keep the user ID for transaction requests
-                const user: { userId: number; email: string; created: boolean } = await response.json()
+                const user: { userId: number; email: string } = await response.json()
                 sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
                 setCurrentUserId(user.userId)
                 setPassword('')
@@ -78,11 +80,13 @@ function App() {
             } else if (response.status === 401 || response.status === 403) {
                 setLoginError('Incorrect email or password.')
             } else if (response.status === 400) {
-                setLoginError('Enter a valid email and password, each at most 50 characters.')
+                setLoginError(isCreatingAccount
+                    ? 'Check your name, email, and password requirements.'
+                    : 'Enter a valid email and password, each at most 50 characters.')
             } else if (response.status === 409) {
-                setLoginError('Account creation failed. Please try logging in again.')
+                setLoginError('Account creation failed. Email may already be registered.')
             } else if (response.status === 404 || response.status === 405) {
-                setLoginError('The backend login endpoint is not available yet.')
+                setLoginError('The backend account endpoint is not available yet.')
             } else {
                 setLoginError('Could not complete your request. Please try again.')
             }
@@ -241,16 +245,16 @@ function App() {
                 <form style={{ display: 'grid', gap: '16px', textAlign: 'left', marginTop: '24px' }}
                     onSubmit={(event) => {
                         event.preventDefault()
-                        void login()
+                        void submitAuth()
                     }}>
                     {authScreen === 'create' && (
                         <>
                             <label htmlFor="first-name">First name</label>
-                            <input id="first-name" autoComplete="given-name" required maxLength={50}
+                            <input id="first-name" autoComplete="given-name" required maxLength={20}
                                 disabled={isLoggingIn} value={firstName}
                                 onChange={(event) => setFirstName(event.target.value)} />
                             <label htmlFor="last-name">Last name</label>
-                            <input id="last-name" autoComplete="family-name" required maxLength={50}
+                            <input id="last-name" autoComplete="family-name" required maxLength={20}
                                 disabled={isLoggingIn} value={lastName}
                                 onChange={(event) => setLastName(event.target.value)} />
                         </>

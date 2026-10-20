@@ -2,7 +2,7 @@
 :root {
   color-scheme: light;
   --text: #000;
-  --bg: #cfd8dc;
+  --bg: #263866;
   --accent: #3b6ea5;
   --accent-bg: #eef3fa;
   --accent-border: #3b6ea5;
@@ -22,7 +22,7 @@ body {
   margin: 0;
   color: #000;
   font-family: system-ui, sans-serif;
-  background: #cfd8dc;
+  background: #E0D1D1;
 }
 
 button,
