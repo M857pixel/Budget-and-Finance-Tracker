@@ -33,25 +33,52 @@ public class AuthController {
         // Normalize only the email. Password capitalization and spaces stay unchanged.
         String email = credentials.email().strip().toLowerCase(Locale.ROOT);
         User user = users.findByUserEmailIgnoreCase(email).orElse(null);
-        boolean created = user == null;
-        if (created) {
-            // A new email creates an account; store a hash instead of the typed password.
-            try {
-                user = users.saveAndFlush(new User(email, passwords.hash(credentials.password())));
-            } catch (DataIntegrityViolationException exception) {
-                // Report rejected database writes, including duplicate emails if the
-                // database team adds a unique constraint.
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Account creation failed. Please retry login.");
-            }
-        } else if (!passwords.matches(credentials.password(), user.getPasswordHash())) {
-            // An existing email with a wrong password must not create another account.
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect email or password.");
+        if (user == null || !passwords.matches(credentials.password(), user.getPasswordHash())) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED, "Incorrect email or password.");
         }
-        // Replace any previous session, then remember the authenticated user on the
-        // server. The browser receives a session-ID cookie, not the user's password.
-        if (request.getSession(false) != null) request.getSession(false).invalidate();
+        startSession(request, user);
+        return new LoginResponse(user.getUserId(), user.getUserEmail(), false);
+    }
+
+    @PostMapping("/register")
+    @ResponseStatus(HttpStatus.CREATED)
+    public LoginResponse register(
+            @Valid @RequestBody RegisterRequest credentials,
+            HttpServletRequest request) {
+
+        String email = credentials.email().strip().toLowerCase(Locale.ROOT);
+
+        if (users.findByUserEmailIgnoreCase(email).isPresent()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "An account with this email already exists.");
+        }
+
+        User user;
+        try {
+            user = users.saveAndFlush(new User(
+                    email,
+                    passwords.hash(credentials.password()),
+                    credentials.firstName().strip(),
+                    credentials.lastName().strip(),
+                    java.math.BigDecimal.ZERO
+            ));
+        } catch (DataIntegrityViolationException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "Account creation failed.");
+        }
+
+        startSession(request, user);
+        return new LoginResponse(user.getUserId(), user.getUserEmail(), true);
+    }
+
+    // start a fresh session after login or registration
+    private void startSession(HttpServletRequest request, User user) {
+        if (request.getSession(false) != null) {
+            request.getSession(false).invalidate();
+        }
         request.getSession(true).setAttribute("userId", user.getUserId());
-        return new LoginResponse(user.getUserId(), user.getUserEmail(), created);
+
     }
 
     @PostMapping("/logout")
@@ -65,5 +92,16 @@ public class AuthController {
     // before login runs; the response deliberately contains no password or hash.
     public record LoginRequest(@NotBlank @Email @Size(max = 100) String email,
                                @NotBlank @Size(max = 256) String password) {}
+    public record RegisterRequest(
+            @NotBlank @Size(max = 20) String firstName,
+            @NotBlank @Size(max = 20) String lastName,
+            @NotBlank @Email @Size(max = 50) String email,
+            @NotBlank @Size(min = 8, max = 50)
+            @jakarta.validation.constraints.Pattern(
+                    regexp = "(?s)(?=.*[A-Z])(?=.*[0-9])(?=.*[^\\p{L}\\p{N}\\s]).*",
+                    message = "Password needs an uppercase letter, a number, and a symbol."
+            )
+            String password
+    ) {}
     public record LoginResponse(Long userId, String email, boolean created) {}
 }
