@@ -1,71 +1,122 @@
 /*
     Connects HTTP requests from the frontend to the repositories that read and
-    write users and transactions.
+    write to the database. Depends on both model and repository.
 
-    Start the backend before running these examples. Replace each placeholder
-    with a value. The secured transaction endpoints require a login session for
-    the same userId in the URL.
+    Create User and Transaction in Terminal:
+    1. Start backend
+    2. In terminal cd to backend folder
 
-    1. Create a user (POST /api/users):
-    PowerShell:
-    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users" -ContentType "application/json" -Body '{"email":"<email>","passwordHash":"<password>","firstName":"<first name>","lastName":"<last name>","balance":0.00}'
+    3. To Create User:
 
-    Mac/Linux:
-    curl -X POST "http://localhost:8080/api/users" -H "Content-Type: application/json" -d '{"email":"<email>","passwordHash":"<password>","firstName":"<first name>","lastName":"<last name>","balance":0.00}'
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                $user = Invoke-RestMethod -Method Post
+                -Uri "http://localhost:8080/api/users"
+                -ContentType "application/json"
+                -Body '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
-    2. Log in to create a session (POST /api/login; authentication endpoint):
-    PowerShell:
-    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/login" -ContentType "application/json" -Body '{"email":"<email>","password":"<password>"}' -WebSession $session
+    One Line for Convenience:
+    $user = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users" -ContentType "application/json" -Body '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
-    Mac/Linux:
-    curl -c cookies.txt -X POST "http://localhost:8080/api/login" -H "Content-Type: application/json" -d '{"email":"<email>","password":"<password>"}'
+    Mac Command:
+                            curl -X POST http://localhost:8080/api/users \
+                            -H "Content-Type: application/json" \
+                            -d '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
-    Use the same PowerShell $session with the following commands. For Mac/Linux,
-    add -b cookies.txt to each secured curl command.
+    4. To Authorize A User By Email And Password Hash:
 
-    3. Create a transaction (POST /api/users/{userId}/transactions):
-    PowerShell:
-    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/<userId>/transactions" -ContentType "application/json" -Body '{"name":"<name>","type":"<type>","amount":25.50,"date":"2026-10-25","description":"<description>"}' -WebSession $session
+    Windows Command:
+    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/login" -ContentType "application/json" -Body '{"email":"{put email here}","passwordHash":"{put password hash here}"}'
 
-    Mac/Linux:
-    curl -X POST "http://localhost:8080/api/users/<userId>/transactions" -H "Content-Type: application/json" -d '{"name":"<name>","type":"<type>","amount":25.50,"date":"2026-10-25","description":"<description>"}' -b cookies.txt
+    Mac Command:
+    curl -X POST "http://localhost:8080/api/users/login" \\
+        -H "Content-Type: application/json" \\
+        -d '{"email":"{put email here}","passwordHash":"{put password hash here}"}'
 
-    4. Get a user's transaction total for a month (GET /api/users/{userId}/transactions/total?month=YYYY-MM):
-    PowerShell:
-    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/<userId>/transactions/total?month=<YYYY-MM>" -WebSession $session
+    5. To Check Whether A User Exists By Email:
 
-    Mac/Linux:
-    curl -X GET "http://localhost:8080/api/users/<userId>/transactions/total?month=2026-10" -b cookies.txt
+    Windows Command:
+    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users?email={put email here}"
 
-    5. Get transactions by type (GET /api/users/{userId}/transactions/type/{type}):
-    PowerShell:
-    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/<userId>/transactions/type/<type>" -WebSession $session
+    Mac Command:
+    curl -X GET "http://localhost:8080/api/users?email={put email here}"
 
-    Mac/Linux:
-    curl -X GET "http://localhost:8080/api/users/<userId>/transactions/type/<type>" -b cookies.txt
+    6. To Create Transaction:
 
-    6. Update a transaction (PATCH /api/users/{userId}/transactions/{transactionId}):
-    Send only fields to update: name, type, amount, date, description.
-    PowerShell:
-    Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/<userId>/transactions/<transactionId>" -ContentType "application/json" -Body '{"amount":85.50,"description":"Updated description"}' -WebSession $session
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                Invoke-RestMethod -Method Post
+                -Uri "http://localhost:8080/api/users/{put user id here}/transactions"
+                -ContentType "application/json"
+                -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
-    Mac/Linux:
-    curl -X PATCH "http://localhost:8080/api/users/<userId>/transactions/<transactionId>" -H "Content-Type: application/json" -d '{"amount":85.50,"description":"Updated description"}' -b cookies.txt
+    One line for Convenvience:
+    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/{put user id here}/transactions" -ContentType "application/json" -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
-    7. Delete a transaction (DELETE /api/users/{userId}/transactions?transactionId={transactionId}):
-    PowerShell:
-    Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/<userId>/transactions?transactionId=<transactionId>" -WebSession $session
+    Mac Command:
+                curl -X POST http://localhost:8080/api/users/{put user id here}/transactions \
+                            -H "Content-Type: application/json" \
+                            -d '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
-    Mac/Linux:
-    curl -X DELETE "http://localhost:8080/api/users/<userId>/transactions?transactionId=<transactionId>" -b cookies.txt
+    Response: Converted from below JSON to a transaction record using toResponse
+    {
+        "transactionId": {transactionId},
+        "userId": {userId},
+        "name": "{name}",
+        "type": "{type}",
+        "amount": {amount},
+        "date": "{date: YY-MM-DD}",
+        "description": "{description}"
+    }
 
-    8. Delete a user and their transactions (DELETE /api/users/{userId}):
-    PowerShell:
-    Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/<userId>"
+    7. To Delete Transaction:
 
-    Mac/Linux:
-    curl -X DELETE "http://localhost:8080/api/users/<userId>"
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                Invoke-RestMethod -Method Delete
+                -Uri "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    One Line for Convenience:
+    Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    Mac Command:
+                curl -X DELETE "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    8. To Edit Transaction:
+
+    NOTE: Omit curly braces around put here labels. Include only the fields you want to update in the body.
+    Windows Command:
+                Invoke-RestMethod -Method Patch
+                -Uri "http://localhost:8080/api/users/{put userId here}/transactions/{put transactionId here}"
+                -ContentType "application/json"
+                -Body '{"amount":{put amount here},"description":"{put description here}"}'
+
+    One Line for Convenience:
+    Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/{userId}/transactions/{transactionId}" -ContentType "application/json" -Body '{"amount":85.50,"description":"Updated description"}'
+
+    Mac Command:
+                curl -X PATCH "http://localhost:8080/api/users/{put userId here}/transactions/{put transactionId here}" \
+                            -H "Content-Type: application/json" \
+                            -d '{"amount":85.50,"description":"Updated description"}'
+
+    9. To Delete User And Their Transactions:
+
+    NOTE: Omit curly braces around put here labels.
+    Windows Command:
+                Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/{put userID here}"
+
+    Mac Command:
+                curl -X DELETE "http://localhost:8080/api/users/{put userID here}"
+
+    10. To Get Transactions By Type:
+
+    NOTE: Omit curly braces around put here labels.
+    Windows Command:
+                Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/{put userId here}/transactions/type/{put type here}"
+
+    Mac Command:
+                curl -X GET "http://localhost:8080/api/users/{put userId here}/transactions/type/{put type here}"
+
 */
 
 package com.pocketledger.controller;
@@ -152,21 +203,15 @@ public class LedgerController {
     }
 
     /*
-    Gets user transactions by userId and month. The session must match this ID before the
-    repository loads only that user's rows for the Transaction History tab and totals the
-    transaction amounts.
+    Gets user transactions by userId. The session must match this ID before the
+    repository loads only that user's rows for the Transaction History tab.
     @Return: List<TransactionResponse>
     */
-    @GetMapping("/users/{userId}/transactions/total")
-    public BigDecimal getTransactionTotalByMonth(@PathVariable Long userId,
-                                                 @RequestParam java.time.YearMonth month,
-                                                 HttpServletRequest httpRequest) {
+    @GetMapping("/users/{userId}/transactions")
+    public List<TransactionResponse> getTransactions(@PathVariable Long userId, HttpServletRequest httpRequest) {
         requireUser(userId, httpRequest);
         return transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId)
-                .stream()
-                .filter(transaction -> java.time.YearMonth.from(transaction.getTransactionDate()).equals(month))
-                .map(Transaction::getTransactionAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .stream().map(LedgerController::toResponse).toList();
     }
 
     /*
