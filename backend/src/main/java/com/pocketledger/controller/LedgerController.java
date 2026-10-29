@@ -98,8 +98,7 @@ public class LedgerController {
     private final MonthlyBudgetRepository monthlyBudgetRepository;
 
     //Constructor: Spring supplies the repository objects
-    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository,
-                            MonthlyBudgetRepository monthlyBudgetRepository) {
+    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository, MonthlyBudgetRepository monthlyBudgetRepository) {
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
         this.monthlyBudgetRepository = monthlyBudgetRepository;
@@ -108,7 +107,7 @@ public class LedgerController {
     /*
     Stores created user in Supabase
     @Return: UserResponse object (Contains: userID, email, firstName, lastName, balance)
-     */
+    */
     @PostMapping("/users")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse createUser(@RequestBody CreateUserRequest request) {
@@ -279,7 +278,7 @@ Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/{userId}/b
     Checks that the session belongs to the requested user
     then saves the date and amount and returns the generated budget ID
     @Returns: MonthlyBudgetResponse
-     */
+    */
     @PostMapping("/users/{userId}/budgets")
     @ResponseStatus(HttpStatus.CREATED)
     public MonthlyBudgetResponse createMonthlyBudget(@PathVariable Long userId,
