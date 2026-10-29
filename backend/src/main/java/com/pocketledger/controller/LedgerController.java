@@ -71,8 +71,10 @@
 package com.pocketledger.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import com.pocketledger.model.MonthlyBudget;
 import com.pocketledger.model.Transaction;
 import com.pocketledger.model.User;
+import com.pocketledger.repository.MonthlyBudgetRepository;
 import com.pocketledger.repository.TransactionRepository;
 import com.pocketledger.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -93,11 +95,14 @@ public class LedgerController {
     //Stores the repositories
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
+    private final MonthlyBudgetRepository monthlyBudgetRepository;
 
     //Constructor: Spring supplies the repository objects
-    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository) {
+    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository,
+                            MonthlyBudgetRepository monthlyBudgetRepository) {
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
+        this.monthlyBudgetRepository = monthlyBudgetRepository;
     }
 
     /*
@@ -116,7 +121,7 @@ public class LedgerController {
     /*
     Delete user by ID and all transactions tied to the user by userID
     @Return: no object Status: 204, No Content
-     */
+    */
     @DeleteMapping("/users/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Transactional
@@ -132,7 +137,7 @@ public class LedgerController {
     /*
     Stores created transaction in Supabase
     @Return: TransactionResponse object (Contains: transactionID, userID, name, type, amount, data, description)
-     */
+    */
     @PostMapping("/users/{userId}/transactions")
     @ResponseStatus(HttpStatus.CREATED)
     public TransactionResponse createTransaction(@PathVariable Long userId,
@@ -155,7 +160,7 @@ public class LedgerController {
     Gets user transactions by userId and month. The session must match this ID before the
     repository loads only that user's rows for the Transaction History tab and totals the
     transaction amounts.
-    @Return: List<TransactionResponse>
+    @Return: BigDecimal
     */
     @GetMapping("/users/{userId}/transactions/total")
     public BigDecimal getTransactionTotalByMonth(@PathVariable Long userId,
@@ -249,6 +254,90 @@ public class LedgerController {
         );
     }
 
+//------------------------Monthly_Budget Table---------------------------------
+/*
+Create Monthly Budget:
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/{userId}/budgets" `
+>>   -ContentType "application/json" `
+>>   -Body '{"date":"YYYY-MM-DD","budgetAmount":{amount.00}}' `
+>>   -WebSession $session
+
+Get Monthly Budget:
+Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/{userId}/budgets?month={YYYY-MM}" `
+>>   -WebSession $session
+
+Update Monthly Budget:
+Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/{userId}/budgets?month={YYYY-MM}" `
+  -ContentType "application/json" `
+  -Body '{"budgetAmount":{amount}}' `
+  -WebSession $session
+ */
+
+
+    /*
+    Add a monthly budget to the monthly_budget table
+    Checks that the session belongs to the requested user
+    then saves the date and amount and returns the generated budget ID
+    @Returns: MonthlyBudgetResponse
+     */
+    @PostMapping("/users/{userId}/budgets")
+    @ResponseStatus(HttpStatus.CREATED)
+    public MonthlyBudgetResponse createMonthlyBudget(@PathVariable Long userId,
+                                                     @RequestBody CreateMonthlyBudgetRequest request,
+                                                     HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        MonthlyBudget saved = monthlyBudgetRepository.save(
+                new MonthlyBudget(user, request.date().withDayOfMonth(1), request.budgetAmount()));
+        return new MonthlyBudgetResponse(saved.getBudgetId(), saved.getUser().getUserId(),
+                saved.getBudgetMonth(), saved.getBudgetAmount());
+    }
+
+    /*
+    Find a user's budget for the requested YYYY-MM, after checking the login session.
+    @Returns: MonthlyBudgetResponse
+    */
+    @GetMapping("/users/{userId}/budgets")
+    public MonthlyBudgetResponse getMonthlyBudget(@PathVariable Long userId,
+                                                   @RequestParam java.time.YearMonth month,
+                                                   HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        MonthlyBudget budget = monthlyBudgetRepository.findByUser_UserIdOrderByBudgetMonthDesc(userId)
+                .stream()
+                .filter(candidate -> java.time.YearMonth.from(candidate.getBudgetMonth()).equals(month))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Monthly budget not found"));
+
+        return new MonthlyBudgetResponse(budget.getBudgetId(), budget.getUser().getUserId(),
+                budget.getBudgetMonth(), budget.getBudgetAmount());
+    }
+
+    /*
+    Update the amount for the user's budget in the requested YYYY-MM.
+    The session must belong to the requested user.
+    */
+    @PatchMapping("/users/{userId}/budgets")
+    @Transactional
+    public MonthlyBudgetResponse updateMonthlyBudget(@PathVariable Long userId,
+                                                      @RequestParam java.time.YearMonth month,
+                                                      @RequestBody UpdateMonthlyBudgetRequest request,
+                                                      HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        if (request.budgetAmount() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Budget amount is required");
+        }
+        MonthlyBudget budget = monthlyBudgetRepository
+                .findByUser_UserIdAndBudgetMonth(userId, month.atDay(1))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Monthly budget not found"));
+
+        budget.updateAmount(request.budgetAmount());
+        MonthlyBudget saved = monthlyBudgetRepository.save(budget);
+        return new MonthlyBudgetResponse(saved.getBudgetId(), saved.getUser().getUserId(),
+                saved.getBudgetMonth(), saved.getBudgetAmount());
+    }
+
     //SpingBoot uses these data containers to convert between JSON and Java objects
     public record CreateUserRequest(String email, String passwordHash, String firstName,
                                     String lastName, BigDecimal balance) {}
@@ -261,4 +350,7 @@ public class LedgerController {
                                            LocalDate date, String description) {}
     public record TransactionResponse(Long transactionId, Long userId, String name, String type,
                                       BigDecimal amount, LocalDate date, String description) {}
+    public record CreateMonthlyBudgetRequest(LocalDate date, BigDecimal budgetAmount) {}
+    public record UpdateMonthlyBudgetRequest(BigDecimal budgetAmount) {}
+    public record MonthlyBudgetResponse(Long budgetId, Long userId, LocalDate date, BigDecimal budgetAmount) {}
 }
