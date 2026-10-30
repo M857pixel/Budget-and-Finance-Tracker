@@ -1,78 +1,131 @@
 /*
     Connects HTTP requests from the frontend to the repositories that read and
-    write users and transactions.
+    write to the database. Depends on both model and repository.
 
-    Start the backend before running these examples. Replace each placeholder
-    with a value. The secured transaction endpoints require a login session for
-    the same userId in the URL.
+    Create User and Transaction in Terminal:
+    1. Start backend
+    2. In terminal cd to backend folder
 
-    1. Create a user (POST /api/users):
-    PowerShell:
-    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users" -ContentType "application/json" -Body '{"email":"<email>","passwordHash":"<password>","firstName":"<first name>","lastName":"<last name>","balance":0.00}'
+    3. To Create User:
 
-    Mac/Linux:
-    curl -X POST "http://localhost:8080/api/users" -H "Content-Type: application/json" -d '{"email":"<email>","passwordHash":"<password>","firstName":"<first name>","lastName":"<last name>","balance":0.00}'
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                $user = Invoke-RestMethod -Method Post
+                -Uri "http://localhost:8080/api/users"
+                -ContentType "application/json"
+                -Body '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
-    2. Log in to create a session (POST /api/login; authentication endpoint):
-    PowerShell:
-    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/login" -ContentType "application/json" -Body '{"email":"<email>","password":"<password>"}' -WebSession $session
+    One Line for Convenience:
+    $user = Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users" -ContentType "application/json" -Body '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
-    Mac/Linux:
-    curl -c cookies.txt -X POST "http://localhost:8080/api/login" -H "Content-Type: application/json" -d '{"email":"<email>","password":"<password>"}'
+    Mac Command:
+                            curl -X POST http://localhost:8080/api/users \
+                            -H "Content-Type: application/json" \
+                            -d '{"email":"{put email here}","passwordHash":"{put password here}","firstName":"{put first name here}","lastName":"{put last name here}","balance":{put balance here}}'
 
-    Use the same PowerShell $session with the following commands. For Mac/Linux,
-    add -b cookies.txt to each secured curl command.
+    4. To Authorize A User By Email And Password Hash:
 
-    3. Create a transaction (POST /api/users/{userId}/transactions):
-    PowerShell:
-    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/<userId>/transactions" -ContentType "application/json" -Body '{"name":"<name>","type":"<type>","amount":25.50,"date":"2026-10-25","description":"<description>"}' -WebSession $session
+    Windows Command:
+    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/login" -ContentType "application/json" -Body '{"email":"{put email here}","passwordHash":"{put password hash here}"}'
 
-    Mac/Linux:
-    curl -X POST "http://localhost:8080/api/users/<userId>/transactions" -H "Content-Type: application/json" -d '{"name":"<name>","type":"<type>","amount":25.50,"date":"2026-10-25","description":"<description>"}' -b cookies.txt
+    Mac Command:
+    curl -X POST "http://localhost:8080/api/users/login" \\
+        -H "Content-Type: application/json" \\
+        -d '{"email":"{put email here}","passwordHash":"{put password hash here}"}'
 
-    4. Get a user's transaction total for a month (GET /api/users/{userId}/transactions/total?month=YYYY-MM):
-    PowerShell:
-    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/<userId>/transactions/total?month=<YYYY-MM>" -WebSession $session
+    5. To Check Whether A User Exists By Email:
 
-    Mac/Linux:
-    curl -X GET "http://localhost:8080/api/users/<userId>/transactions/total?month=2026-10" -b cookies.txt
+    Windows Command:
+    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users?email={put email here}"
 
-    5. Get transactions by type (GET /api/users/{userId}/transactions/type/{type}):
-    PowerShell:
-    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/<userId>/transactions/type/<type>" -WebSession $session
+    Mac Command:
+    curl -X GET "http://localhost:8080/api/users?email={put email here}"
 
-    Mac/Linux:
-    curl -X GET "http://localhost:8080/api/users/<userId>/transactions/type/<type>" -b cookies.txt
+    6. To Create Transaction:
 
-    6. Update a transaction (PATCH /api/users/{userId}/transactions/{transactionId}):
-    Send only fields to update: name, type, amount, date, description.
-    PowerShell:
-    Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/<userId>/transactions/<transactionId>" -ContentType "application/json" -Body '{"amount":85.50,"description":"Updated description"}' -WebSession $session
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                Invoke-RestMethod -Method Post
+                -Uri "http://localhost:8080/api/users/{put user id here}/transactions"
+                -ContentType "application/json"
+                -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
-    Mac/Linux:
-    curl -X PATCH "http://localhost:8080/api/users/<userId>/transactions/<transactionId>" -H "Content-Type: application/json" -d '{"amount":85.50,"description":"Updated description"}' -b cookies.txt
+    One line for Convenvience:
+    Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/{put user id here}/transactions" -ContentType "application/json" -Body '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
-    7. Delete a transaction (DELETE /api/users/{userId}/transactions?transactionId={transactionId}):
-    PowerShell:
-    Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/<userId>/transactions?transactionId=<transactionId>" -WebSession $session
+    Mac Command:
+                curl -X POST http://localhost:8080/api/users/{put user id here}/transactions \
+                            -H "Content-Type: application/json" \
+                            -d '{"name":"{put name here}","type":"{put type here}","amount":{put amount here},"date":"{put date here YY-MM-DD}","description":"{put description here}"}'
 
-    Mac/Linux:
-    curl -X DELETE "http://localhost:8080/api/users/<userId>/transactions?transactionId=<transactionId>" -b cookies.txt
+    Response: Converted from below JSON to a transaction record using toResponse
+    {
+        "transactionId": {transactionId},
+        "userId": {userId},
+        "name": "{name}",
+        "type": "{type}",
+        "amount": {amount},
+        "date": "{date: YY-MM-DD}",
+        "description": "{description}"
+    }
 
-    8. Delete a user and their transactions (DELETE /api/users/{userId}):
-    PowerShell:
-    Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/<userId>"
+    7. To Delete Transaction:
 
-    Mac/Linux:
-    curl -X DELETE "http://localhost:8080/api/users/<userId>"
+    NOTE: Omit curly braces around put here labels
+    Windows Command:
+                Invoke-RestMethod -Method Delete
+                -Uri "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    One Line for Convenience:
+    Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    Mac Command:
+                curl -X DELETE "http://localhost:8080/api/users/{put userId here}/transactions?transactionId={put transactionId here}"
+
+    8. To Edit Transaction:
+
+    NOTE: Omit curly braces around put here labels. Include only the fields you want to update in the body.
+    Windows Command:
+                Invoke-RestMethod -Method Patch
+                -Uri "http://localhost:8080/api/users/{put userId here}/transactions/{put transactionId here}"
+                -ContentType "application/json"
+                -Body '{"amount":{put amount here},"description":"{put description here}"}'
+
+    One Line for Convenience:
+    Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/{userId}/transactions/{transactionId}" -ContentType "application/json" -Body '{"amount":85.50,"description":"Updated description"}'
+
+    Mac Command:
+                curl -X PATCH "http://localhost:8080/api/users/{put userId here}/transactions/{put transactionId here}" \
+                            -H "Content-Type: application/json" \
+                            -d '{"amount":85.50,"description":"Updated description"}'
+
+    9. To Delete User And Their Transactions:
+
+    NOTE: Omit curly braces around put here labels.
+    Windows Command:
+                Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/{put userID here}"
+
+    Mac Command:
+                curl -X DELETE "http://localhost:8080/api/users/{put userID here}"
+
+    10. To Get Transactions By Type:
+
+    NOTE: Omit curly braces around put here labels.
+    Windows Command:
+                Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/{put userId here}/transactions/type/{put type here}"
+
+    Mac Command:
+                curl -X GET "http://localhost:8080/api/users/{put userId here}/transactions/type/{put type here}"
+
 */
 
 package com.pocketledger.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import com.pocketledger.model.MonthlyBudget;
 import com.pocketledger.model.Transaction;
 import com.pocketledger.model.User;
+import com.pocketledger.repository.MonthlyBudgetRepository;
 import com.pocketledger.repository.TransactionRepository;
 import com.pocketledger.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -93,17 +146,19 @@ public class LedgerController {
     //Stores the repositories
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
+    private final MonthlyBudgetRepository monthlyBudgetRepository;
 
     //Constructor: Spring supplies the repository objects
-    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository) {
+    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository, MonthlyBudgetRepository monthlyBudgetRepository) {
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
+        this.monthlyBudgetRepository = monthlyBudgetRepository;
     }
 
     /*
     Stores created user in Supabase
     @Return: UserResponse object (Contains: userID, email, firstName, lastName, balance)
-     */
+    */
     @PostMapping("/users")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse createUser(@RequestBody CreateUserRequest request) {
@@ -116,7 +171,7 @@ public class LedgerController {
     /*
     Delete user by ID and all transactions tied to the user by userID
     @Return: no object Status: 204, No Content
-     */
+    */
     @DeleteMapping("/users/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Transactional
@@ -132,7 +187,7 @@ public class LedgerController {
     /*
     Stores created transaction in Supabase
     @Return: TransactionResponse object (Contains: transactionID, userID, name, type, amount, data, description)
-     */
+    */
     @PostMapping("/users/{userId}/transactions")
     @ResponseStatus(HttpStatus.CREATED)
     public TransactionResponse createTransaction(@PathVariable Long userId,
@@ -152,21 +207,22 @@ public class LedgerController {
     }
 
     /*
+<<<<<<< HEAD
+    Gets user transactions by userId. The session must match this ID before the
+    repository loads only that user's rows for the Transaction History tab.
+    @Return: List<TransactionResponse>
+=======
     Gets user transactions by userId and month. The session must match this ID before the
     repository loads only that user's rows for the Transaction History tab and totals the
     transaction amounts.
-    @Return: List<TransactionResponse>
+    @Return: BigDecimal
+>>>>>>> Database-Query-Organization
     */
-    @GetMapping("/users/{userId}/transactions/total")
-    public BigDecimal getTransactionTotalByMonth(@PathVariable Long userId,
-                                                 @RequestParam java.time.YearMonth month,
-                                                 HttpServletRequest httpRequest) {
+    @GetMapping("/users/{userId}/transactions")
+    public List<TransactionResponse> getTransactions(@PathVariable Long userId, HttpServletRequest httpRequest) {
         requireUser(userId, httpRequest);
         return transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId)
-                .stream()
-                .filter(transaction -> java.time.YearMonth.from(transaction.getTransactionDate()).equals(month))
-                .map(Transaction::getTransactionAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .stream().map(LedgerController::toResponse).toList();
     }
 
     /*
@@ -249,6 +305,90 @@ public class LedgerController {
         );
     }
 
+//------------------------Monthly_Budget Table---------------------------------
+/*
+Create Monthly Budget:
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/users/{userId}/budgets" `
+>>   -ContentType "application/json" `
+>>   -Body '{"date":"YYYY-MM-DD","budgetAmount":{amount.00}}' `
+>>   -WebSession $session
+
+Get Monthly Budget:
+Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/{userId}/budgets?month={YYYY-MM}" `
+>>   -WebSession $session
+
+Update Monthly Budget:
+Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/{userId}/budgets?month={YYYY-MM}" `
+  -ContentType "application/json" `
+  -Body '{"budgetAmount":{amount}}' `
+  -WebSession $session
+ */
+
+
+    /*
+    Add a monthly budget to the monthly_budget table
+    Checks that the session belongs to the requested user
+    then saves the date and amount and returns the generated budget ID
+    @Returns: MonthlyBudgetResponse
+    */
+    @PostMapping("/users/{userId}/budgets")
+    @ResponseStatus(HttpStatus.CREATED)
+    public MonthlyBudgetResponse createMonthlyBudget(@PathVariable Long userId,
+                                                     @RequestBody CreateMonthlyBudgetRequest request,
+                                                     HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        MonthlyBudget saved = monthlyBudgetRepository.save(
+                new MonthlyBudget(user, request.date().withDayOfMonth(1), request.budgetAmount()));
+        return new MonthlyBudgetResponse(saved.getBudgetId(), saved.getUser().getUserId(),
+                saved.getBudgetMonth(), saved.getBudgetAmount());
+    }
+
+    /*
+    Find a user's budget for the requested YYYY-MM, after checking the login session.
+    @Returns: MonthlyBudgetResponse
+    */
+    @GetMapping("/users/{userId}/budgets")
+    public MonthlyBudgetResponse getMonthlyBudget(@PathVariable Long userId,
+                                                   @RequestParam java.time.YearMonth month,
+                                                   HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        MonthlyBudget budget = monthlyBudgetRepository.findByUser_UserIdOrderByBudgetMonthDesc(userId)
+                .stream()
+                .filter(candidate -> java.time.YearMonth.from(candidate.getBudgetMonth()).equals(month))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Monthly budget not found"));
+
+        return new MonthlyBudgetResponse(budget.getBudgetId(), budget.getUser().getUserId(),
+                budget.getBudgetMonth(), budget.getBudgetAmount());
+    }
+
+    /*
+    Update the amount for the user's budget in the requested YYYY-MM.
+    The session must belong to the requested user.
+    */
+    @PatchMapping("/users/{userId}/budgets")
+    @Transactional
+    public MonthlyBudgetResponse updateMonthlyBudget(@PathVariable Long userId,
+                                                      @RequestParam java.time.YearMonth month,
+                                                      @RequestBody UpdateMonthlyBudgetRequest request,
+                                                      HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        if (request.budgetAmount() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Budget amount is required");
+        }
+        MonthlyBudget budget = monthlyBudgetRepository
+                .findByUser_UserIdAndBudgetMonth(userId, month.atDay(1))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Monthly budget not found"));
+
+        budget.updateAmount(request.budgetAmount());
+        MonthlyBudget saved = monthlyBudgetRepository.save(budget);
+        return new MonthlyBudgetResponse(saved.getBudgetId(), saved.getUser().getUserId(),
+                saved.getBudgetMonth(), saved.getBudgetAmount());
+    }
+
     //SpingBoot uses these data containers to convert between JSON and Java objects
     public record CreateUserRequest(String email, String passwordHash, String firstName,
                                     String lastName, BigDecimal balance) {}
@@ -261,4 +401,7 @@ public class LedgerController {
                                            LocalDate date, String description) {}
     public record TransactionResponse(Long transactionId, Long userId, String name, String type,
                                       BigDecimal amount, LocalDate date, String description) {}
+    public record CreateMonthlyBudgetRequest(LocalDate date, BigDecimal budgetAmount) {}
+    public record UpdateMonthlyBudgetRequest(BigDecimal budgetAmount) {}
+    public record MonthlyBudgetResponse(Long budgetId, Long userId, LocalDate date, BigDecimal budgetAmount) {}
 }
