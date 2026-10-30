@@ -1,6 +1,4 @@
 import './App.css'
-import AssistantChat from './AssistantChat'
-import MonthlySummary from './MonthlySummary'
 import { useEffect, useState } from 'react'
 
 // array of selectable transaction types
@@ -108,7 +106,6 @@ function App() {
     const [transactionDate, setTransactionDate] = useState('')
     const [transactionDescription, setTransactionDescription] = useState('')
     const [isSaving, setIsSaving] = useState(false)
-    const [summaryRefresh, setSummaryRefresh] = useState(0)
     const [activeTab, setActiveTab] = useState<'add' | 'modify' | 'history' | 'import'>('add')
 
     // saved transactions and history feedback
@@ -189,7 +186,6 @@ function App() {
             })
             if (response.ok) {
                 setMessage('Transaction saved successfully.')
-                setSummaryRefresh((value) => value + 1)
                 resetTransaction()
             } else {
                 setMessage(`Transaction could not be saved (${response.status}). Check the fields and try again.`)
@@ -222,7 +218,6 @@ function App() {
                 },
             )
 
-            if (response.ok) setSummaryRefresh((value) => value + 1)
             setMessage(
                 response.ok
                     ? `Uploaded ${selectedFile.name}.`
@@ -322,8 +317,6 @@ function App() {
                 setActiveTab('add')
             }}>Log out</button>
 
-            {currentUserId !== null && <MonthlySummary key={currentUserId} userId={currentUserId} refresh={summaryRefresh} />}
-
             {/* top bar switches between the main features */}
             <nav className="topbar">
                 <button
@@ -356,6 +349,9 @@ function App() {
             <section className="content">
                 {activeTab === 'add' && (
                     <section className="transaction-add">
+                        <h2>Current balance</h2>
+                        {/* placeholder balance until it is connected to backend data */}
+                        <p className="balance">$0.00</p>
 
                         <form className="transaction-form" onSubmit={(event) => {
                                 event.preventDefault()
@@ -468,7 +464,6 @@ function App() {
                     </section>
                 )}
             </section>
-            <AssistantChat />
         </main>
     )
 }
