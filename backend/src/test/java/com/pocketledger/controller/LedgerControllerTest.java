@@ -57,8 +57,20 @@ class LedgerControllerTest {
     // This checks which query is called, rather than real database rows or sorting.
     @Test
     void historyQueriesOnlyTheAuthenticatedUsersRows() throws Exception {
-        mvc.perform(get("/api/users/7/transactions").sessionAttr("userId", 7L))
-                .andExpect(status().isOk());
+        User user = mock(User.class);
+        when(user.getUserId()).thenReturn(7L);
+        when(transactions.findByUser_UserIdOrderByTransactionDateDesc(7L)).thenReturn(java.util.List.of(
+                new Transaction(user, "Groceries", "Food", new java.math.BigDecimal("12.34"),
+                        java.time.LocalDate.of(2026, 11, 2), "Weekly shopping")));
+        mvc.perform(get("/api/users/7/transactions").sessionAttr("userId", 7L)
+                        .header("Origin", "http://localhost:5173"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
+                .andExpect(header().string("Access-Control-Allow-Credentials", "true"))
+                .andExpect(jsonPath("$[0].userId").value(7))
+                .andExpect(jsonPath("$[0].name").value("Groceries"))
+                .andExpect(jsonPath("$[0].amount").value(12.34))
+                .andExpect(jsonPath("$[0].date").value("2026-11-02"));
         // Verify that the controller asks specifically for user 7's transactions.
         verify(transactions).findByUser_UserIdOrderByTransactionDateDesc(7L);
     }

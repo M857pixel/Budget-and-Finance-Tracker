@@ -157,6 +157,14 @@ public class LedgerController {
     transaction amounts.
     @Return: List<TransactionResponse>
     */
+    @GetMapping("/users/{userId}/transactions")
+    public List<TransactionResponse> getTransactions(@PathVariable Long userId,
+                                                      HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        return transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId)
+                .stream().map(LedgerController::toResponse).toList();
+    }
+
     @GetMapping("/users/{userId}/transactions/total")
     public BigDecimal getTransactionTotalByMonth(@PathVariable Long userId,
                                                  @RequestParam java.time.YearMonth month,

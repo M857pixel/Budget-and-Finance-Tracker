@@ -406,6 +406,27 @@ textarea:focus-visible {
   color: #596579;
 }
 
+.budget-value {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  padding: 0;
+  margin: 1em 0;
+  font-size: clamp(1.25rem, 3vw, 2.5rem);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.budget-value:hover {
+  text-decoration: underline;
+}
+
+.budget-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .summary-card p {
   font-size: clamp(1.25rem, 3vw, 2.5rem);
   font-weight: 700;
