@@ -179,16 +179,20 @@ public class LedgerController {
 
     /*
     Categorization Query:
-    Get transactions matching both the user ID and transaction type
+    Get transactions matching the userId, transaction type, and month
     @Returns: List<TransactionResponse> (of all the same type and user)
     */
     @GetMapping("/users/{userId}/transactions/type/{type}")
     public List<TransactionResponse> getTransactionsByType(@PathVariable Long userId,
-                                                           @PathVariable String type, HttpServletRequest httpRequest) {
+                                                           @PathVariable String type,
+                                                           @RequestParam java.time.YearMonth month,
+                                                           HttpServletRequest httpRequest) {
         requireUser(userId, httpRequest);
         return transactionRepository
                 .findByUser_UserIdAndTransactionTypeOrderByTransactionDateDesc(userId, type)
-                .stream().map(LedgerController::toResponse).toList();
+                .stream()
+                .filter(transaction -> java.time.YearMonth.from(transaction.getTransactionDate()).equals(month))
+                .map(LedgerController::toResponse).toList();
     }
 
     /*
