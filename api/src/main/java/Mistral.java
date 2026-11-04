@@ -26,18 +26,25 @@ import java.net.http.HttpResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Path;
+import java.io.File;
+import java.net.CookieHandler;
+import java.net.CookieManager;
 
 
 public class Mistral {
-    private static final String API_URL =
-            "https://api.mistral.ai/v1/chat/completions";
+    private static final String API_URL = "https://api.mistral.ai/v1/chat/completions";
     private static final String MODEL = "ministral-8b-latest";
 
-    private final HttpClient client = HttpClient.newHttpClient();
+    private final HttpClient client;
     private final String apiKey;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public Mistral() {
         this.apiKey = System.getenv("MISTRAL_API_KEY");
+
+        CookieManager cookieManager = new CookieManager();
+        CookieHandler.setDefault(cookieManager);
+        this.client = HttpClient.newBuilder().cookieHandler(cookieManager).build();
 
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
@@ -57,10 +64,28 @@ public class Mistral {
         }
 
 
-        String response = mistral.runAI(input);
-        System.out.println(response);
-        mistral.saveJsonResponse(response);
-        mistral.printJsonResponse(response);
+        String aiResponse = mistral.runAI(input);
+        JsonNode action = mistral.parseAction(aiResponse);
+
+        String actionType = action.path("action").asText();
+        System.out.println("Detected action: " + actionType);
+
+        switch (actionType) {
+            case "GET_MOST_RECENT_TRANSACTION_CATEGORY" -> {
+                String result = mistral.callBackendAction(actionType);
+                System.out.println("Result: " + result);
+            }
+            case "NONE" -> {
+                System.out.println("This appears to be a general question. No backend action required.");
+            }
+            default -> {
+                System.err.println("Unsupported action: " + actionType);
+                System.exit(1);
+            }
+        }
+
+        mistral.saveJsonResponse(aiResponse);
+        mistral.printJsonResponse(aiResponse);
 
     }
 
@@ -91,10 +116,33 @@ public class Mistral {
 
     private String buildRequestJson(String input) throws Exception {
         ObjectMapper mapper = new ObjectMapper();
+
+        String systemPrompt = """
+            Classify the user's finance-related request into a predefined action.
+            
+            You must return ONLY valid JSON in this exact format:
+            {"action":"ACTION_NAME"}
+            
+            Supported actions:
+            - GET_MOST_RECENT_TRANSACTION_CATEGORY: Use when user asks for the category/type of their most recent transaction
+            - NONE: Use for all other questions
+            
+            Rules:
+            - Return exactly one of the supported actions
+            - Do NOT return code, method names, URLs, or user IDs
+            - Do NOT include any text outside the JSON object
+            - If uncertain, return NONE
+            """;
+
         return """
             {
               "model": %s,
+              "temperature": 0.0,
               "messages": [
+                {
+                  "role": "system",
+                  "content": %s
+                },
                 {
                   "role": "user",
                   "content": %s
@@ -103,9 +151,83 @@ public class Mistral {
             }
             """.formatted(
                 mapper.writeValueAsString(MODEL),
+                mapper.writeValueAsString(systemPrompt),
                 mapper.writeValueAsString(input)
         );
     }
+
+
+    public JsonNode parseAction(String responseBody) throws Exception {
+        JsonNode root = mapper.readTree(responseBody);
+        String content = root
+                .path("choices")
+                .path(0)
+                .path("message")
+                .path("content")
+                .asText();
+
+        try {
+            // Parse the AI's JSON response
+            return mapper.readTree(content);
+        } catch (Exception e) {
+            // Handle bad JSON
+            System.err.println("Failed to parse AI response as JSON: " + content);
+            // Fallback: treat as NONE action
+            return mapper.createObjectNode().put("action", "NONE");
+        }
+    }
+
+    public String callBackendAction(String action) throws Exception {
+        // Get authenticated user ID from session (probably isn't working)
+        Long authenticatedUserId = getAuthenticatedUserId();
+
+        if (authenticatedUserId == null) {
+            throw new IllegalStateException("No authenticated user ID available");
+        }
+
+        return switch (action) {
+            case "GET_MOST_RECENT_TRANSACTION_CATEGORY" -> {
+                String url = String.format(
+                        "http://localhost:8080/api/assistant/users/%d/latest-transaction-category",
+                        authenticatedUserId
+                );
+
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("Accept", "application/json")
+                        .GET()
+                        .build();
+
+                HttpResponse<String> response = client.send(
+                        request,
+                        HttpResponse.BodyHandlers.ofString()
+                );
+
+                if (response.statusCode() >= 400) {
+                    throw new RuntimeException(
+                            "Backend returned HTTP " + response.statusCode() + ": " + response.body()
+                    );
+                }
+
+                yield response.body();
+            }
+            default -> throw new IllegalArgumentException("Unsupported action: " + action);
+        };
+    }
+
+    private Long getAuthenticatedUserId() {
+        // This is a placeholder
+        String userIdEnv = System.getenv("AUTHENTICATED_USER_ID");
+        if (userIdEnv != null) {
+            try {
+                return Long.parseLong(userIdEnv);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
 
 
     private void printJsonResponse(String responseBody) throws Exception {
