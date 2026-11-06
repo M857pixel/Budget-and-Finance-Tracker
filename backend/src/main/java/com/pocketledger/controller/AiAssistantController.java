@@ -68,17 +68,19 @@ public class AiAssistantController {
     private final UserRepository userRepository;
     private final AiOrchestratorService aiOrchestratorService;
     private final AiPendingActionStore aiPendingActionStore;
+    private final CurrencyConversionService currencyConversionService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Initializes all dependencies for handling assistant requests. */
     public AiAssistantController(TransactionRepository transactionRepository, AiAssistantService aiAssistantService, UserRepository userRepository,
-                                 AiOrchestratorService aiOrchestratorService, AiPendingActionStore aiPendingActionStore) {
+                                 AiOrchestratorService aiOrchestratorService, AiPendingActionStore aiPendingActionStore, CurrencyConversionService currencyConversionService) {
         this.transactionRepository = transactionRepository;
         this.aiAssistantService = aiAssistantService;
         this.userRepository = userRepository;
         this.aiOrchestratorService = aiOrchestratorService;
         this.aiPendingActionStore = aiPendingActionStore;
+        this.currencyConversionService = currencyConversionService;
     }
 
     public record QueryRequest(String query) {}
@@ -335,6 +337,7 @@ public class AiAssistantController {
             case "GET_SPENDING_TOTAL" -> spendingTotal(userId, c.parameters());
             case "CURRENT_BALANCE_QUERY" -> currentBalanceQuery(userId);
             case "RECENT_TRANSACTIONS_LIST" -> recentTransactionsList(userId, 5);
+            case "CONVERT_CURRENCY" -> convertCurrency(c.parameters());
             default -> "Unknown action: " + c.action();
         };
     }
@@ -362,10 +365,7 @@ public class AiAssistantController {
                 .map(BigDecimal::abs)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        long count = txns.stream()
-                .filter(t -> t.getTransactionAmount() != null
-                        && t.getTransactionAmount().signum() < 0)
-                .count();
+        long count = txns.stream().filter(t -> t.getTransactionAmount() != null && t.getTransactionAmount().signum() < 0).count();
 
         String period = describePeriod(start, end);
         if (count == 0) return "You haven't recorded any spending" + period + ".";
@@ -558,6 +558,21 @@ public class AiAssistantController {
         }
 
         return result.toString();
+    }
+
+    /** Converts a given amount from one currency to another.*/
+    private String convertCurrency(Map<String, String> p) {
+        BigDecimal amount = AiActionParameters.amount(p.get("amount"));
+        String from = p.get("from_currency");
+        String to = p.get("to_currency");
+        if (amount == null || from == null || to == null) {
+            return "I need an amount and both currencies to convert.";
+        }
+        try {
+            return currencyConversionService.formatConversion(amount, from, to);
+        } catch (IllegalArgumentException | CurrencyConversionService.CurrencyConversionException e) {
+            return "I couldn't perform that conversion right now.";
+        }
     }
 }
 
