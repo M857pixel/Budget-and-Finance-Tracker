@@ -26,6 +26,7 @@ const displayDate = (date: string) => {
 function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+    const [currentUserName, setCurrentUserName] = useState('')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loginError, setLoginError] = useState('')
@@ -71,9 +72,10 @@ function App() {
             })
             if (response.ok) {
                 // keep the user ID for transaction requests
-                const user: { userId: number; email: string } = await response.json()
+                const user: { userId: number; email: string; firstName: string; lastName: string } = await response.json()
                 sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
                 setCurrentUserId(user.userId)
+                setCurrentUserName([user.firstName, user.lastName].filter(Boolean).join(' '))
                 setPassword('')
                 setFirstName('')
                 setLastName('')
@@ -294,6 +296,7 @@ function App() {
     return (
         <main className="dashboard">
             <h1>PocketLedger</h1>
+            <p>Hello{currentUserName ? `, ${currentUserName}` : ''}</p>
             <button onClick={async () => {
                 // end the session before returning to login
                 try {
@@ -313,6 +316,7 @@ function App() {
                 setTransactions([])
                 setHistoryError('')
                 setCurrentUserId(null)
+                setCurrentUserName('')
                 setIsLoggedIn(false)
                 setEmail('')
                 setPassword('')
