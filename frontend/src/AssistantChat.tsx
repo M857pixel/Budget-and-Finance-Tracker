@@ -10,7 +10,7 @@ export default function AssistantChat() {
         setSending(true)
         setAnswer('')
         try {
-            const response = await fetch('http://localhost:8080/api/assistant/query', {
+            const response = await fetch(`http://${window.location.hostname}:8080/api/assistant/query`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
