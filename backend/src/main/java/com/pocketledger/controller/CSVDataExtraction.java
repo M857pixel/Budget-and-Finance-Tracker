@@ -155,10 +155,32 @@ class CSVExtractor {
                             "CSV row " + row.getRecordNumber() + " does not match the header columns.\n");
                 }
 
-                String name = row.get("name").trim();
+                // Preserve the full original text in the description field.
+                String description = row.get("name").trim();
+
+                // Collapse repeated whitespace for the displayed name.
+                String name = description.replaceAll("\\s+", " ");
+
                 if (name.isEmpty()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "CSV row " + row.getRecordNumber() + " has a blank name.\n");
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "CSV record " + row.getRecordNumber() + " has a blank name."
+                    );
+                }
+
+                // Shorten names to 50 characters without splitting Unicode characters.
+                if (name.codePointCount(0, name.length()) > 50) {
+                    name = name.substring(0, name.offsetByCodePoints(0, 50))
+                            .stripTrailing();
+                }
+
+                // Reject descriptions that exceed the database migration's 100-character limit.
+                if (description.codePointCount(0, description.length()) > 100) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "CSV record " + row.getRecordNumber()
+                                    + " has a description longer than 100 characters."
+                    );
                 }
 
                 // Amount and date errors name the CSV row to make corrections easier.
@@ -172,7 +194,8 @@ class CSVExtractor {
 
                 LocalDate date = parseDate(row.get("date").trim(), row.getRecordNumber());
                 // The CSV supplies transaction details; the signed-in user supplies ownership.
-                transactions.add(new Transaction(user, name, null, amount, date, null));
+                // Save the shortened name and full description.
+                transactions.add(new Transaction(user, name, null, amount, date, description));
             }
             return transactions;
         }

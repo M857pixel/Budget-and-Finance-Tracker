@@ -219,7 +219,21 @@ public class LedgerController {
 
         transactionRepository.delete(transaction);
     }
+    /*
+    GET handler
+     */
+    @GetMapping("/users/{userId}/transactions")
+    public List<TransactionResponse> getTransactions(
+            @PathVariable Long userId,
+            HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
 
+        return transactionRepository
+                .findByUser_UserIdOrderByTransactionDateDesc(userId)
+                .stream()
+                .map(LedgerController::toResponse)
+                .toList();
+    }
 
     // Used by each transaction endpoint before database access. AuthController stores
     // userId in the server session at login; changing the URL must not grant access

@@ -5,6 +5,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
+import java.util.Map;
 
 import java.io.IOException;
 // handle File upload logic
@@ -18,6 +21,17 @@ import java.io.IOException;
 )
 public class FileUploadController {
 
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> handleUploadError(
+            ResponseStatusException exception) {
+        String message = exception.getReason() == null
+                ? "The CSV upload was rejected."
+                : exception.getReason();
+
+        return ResponseEntity.status(exception.getStatusCode())
+                .body(Map.of("message", message));
+    }
+
     @PostMapping(
             value = "/import",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
@@ -27,9 +41,11 @@ public class FileUploadController {
             @RequestParam("file") MultipartFile file,
             HttpSession session
     ) throws IOException {
+        byte[] normalizedContents = CSVUploadNormalizer.normalize(file);
+
         UploadedFile uploadedFile = new UploadedFile(
                 file.getOriginalFilename(),
-                file.getBytes()
+                normalizedContents
         );
 
         session.setAttribute("uploadedFile", uploadedFile);
