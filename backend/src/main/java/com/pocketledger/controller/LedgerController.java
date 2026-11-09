@@ -1,6 +1,19 @@
 /*
-    Connects HTTP requests from the frontend to the repositories that read and
-    write users and transactions.
+    LedgerController
+
+    Main REST controller for user and transaction operations in PocketLedger.
+    This class connects frontend and AI-agent requests to the user and transaction
+    repositories, allowing the system to create, retrieve, update, total, filter,
+    and delete financial data.
+
+    Most transaction queries are used by the AI budgeting assistant to retrieve
+    user-specific financial information, while other endpoints support normal
+    application features such as transaction history, editing, deletion, and
+    monthly spending totals.
+
+    Secured transaction endpoints verify that the logged-in user's session ID
+    matches the requested user ID before allowing database access, preventing
+    users from accessing another account's financial data.
 
     Start the backend before running these examples. Replace each placeholder
     with a value. The secured transaction endpoints require a login session for
@@ -233,9 +246,11 @@ public class LedgerController {
     }
 
 
-    // Used by each transaction endpoint before database access. AuthController stores
-    // userId in the server session at login; changing the URL must not grant access
-    // to another account's transactions.
+    /*
+    Used by each transaction endpoint before database access. AuthController stores
+    userId in the server session at login; changing the URL must not grant access
+    to another account's transactions.
+     */
     private static void requireUser(Long userId, HttpServletRequest request) {
         // Read an existing session without creating one for an unauthenticated request.
         var session = request.getSession(false);
