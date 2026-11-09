@@ -220,6 +220,12 @@ public class LedgerController {
         Transaction transaction = transactionRepository.findByUser_UserIdAndTransactionId(userId, transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
 
+        BigDecimal amount = request.amount();
+        if (amount != null && (amount.abs().compareTo(new BigDecimal("9999999999.99")) > 0
+                || amount.stripTrailingZeros().scale() > 2)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Enter an amount with at most two decimal places.");
+        }
+
         transaction.updateDetails(
                 request.name(),
                 request.type(),
