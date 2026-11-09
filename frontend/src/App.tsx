@@ -1,6 +1,7 @@
 import './App.css'
 import AssistantChat from './AssistantChat'
 import MonthlySummary from './MonthlySummary'
+import TransactionAmount from './TransactionAmount'
 import { useEffect, useState } from 'react'
 
 // array of selectable transaction types
@@ -436,7 +437,12 @@ function App() {
                                         <tr key={transaction.transactionId}>
                                             <td>{transaction.name}</td>
                                             <td>{transaction.type}</td>
-                                            <td>{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(transaction.amount)}</td>
+                                            <td><TransactionAmount userId={transaction.userId} transactionId={transaction.transactionId}
+                                                amount={transaction.amount} onSaved={(amount) => {
+                                                    setTransactions((current) => current.map((saved) => saved.transactionId === transaction.transactionId
+                                                        ? { ...saved, amount } : saved))
+                                                    setSummaryRefresh((value) => value + 1)
+                                                }} /></td>
                                             <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
                                             <td>{transaction.description || '—'}</td>
                                         </tr>
