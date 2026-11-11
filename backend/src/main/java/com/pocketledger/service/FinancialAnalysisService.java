@@ -26,7 +26,7 @@ public class FinancialAnalysisService {
     }
     Result analyze(Long owner, Selection s, LocalDate today) {
         if(owner == null || owner<=0) throw new IllegalArgumentException("Session owner required");
-        LocalDate[] dates=range(s.period(),today);
+        LocalDate[] dates=range(s,today);
         // The database returns aggregates only. No entity names, notes, or histories are needed.
         var rows=transactions.analysisTotals(owner,dates[0],dates[1]);
         TreeMap<String,BigDecimal> values=new TreeMap<>();
@@ -52,8 +52,8 @@ public class FinancialAnalysisService {
             }
             values.clear(); values.put("Budget",budget); values.put("Expenses",total);
             BigDecimal remaining=budget.subtract(total);
-            explanation="Budget: "+money(budget)+". Expenses: "+money(total)+". "
-                +(remaining.signum()<0 ? "Over budget: "+money(remaining.abs()) : "Remaining: "+money(remaining))+"."
+            explanation="Your recorded budget is "+money(budget)+". You've spent "+money(total)+", "
+                +(remaining.signum()<0 ? "which puts you "+money(remaining.abs())+" over budget" : "leaving "+money(remaining)+" in your budget")+"."
                 +(missing>0 ? " No budget is set for "+missing+" month(s); those months count as zero." : "");
             empty=budget.signum()==0 && total.signum()==0;
         } else {
@@ -61,8 +61,11 @@ public class FinancialAnalysisService {
                 for(YearMonth month=YearMonth.from(dates[0]); !month.isAfter(YearMonth.from(dates[1])); month=month.plusMonths(1))
                     values.putIfAbsent(month.toString(),BigDecimal.ZERO);
             } else values.entrySet().removeIf(e -> e.getValue().signum()==0);
-            explanation=(s.intent()==AnalysisIntent.income_trend ? "Income" : "Expenses")+": "+money(total)+"."
-                +(empty ? " No matching amounts were recorded." : "");
+            explanation=s.intent()==AnalysisIntent.income_trend
+                ? "Your recorded income totals "+money(total)+"."
+                : "You've spent "+money(total)+" during this period."
+                ;
+            if(empty) explanation+=" There are no matching amounts recorded yet.";
         }
         explanation+=" Period: "+dates[0]+" through "+dates[1]+"."
             +(s.category()!=Category.ALL ? " Category: "+s.category().name()+"." : "")

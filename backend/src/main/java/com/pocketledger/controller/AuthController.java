@@ -46,7 +46,7 @@ public class AuthController {
         if (!user.isEmailVerified()) throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                 "Verify your email before logging in. You can request a new verification link.");
         startSession(request, user);
-        return new LoginResponse(user.getUserId(), user.getUserEmail(), false, user.getFirstName(), user.getLastName());
+        return new LoginResponse(user.getUserId(), user.getUserEmail(), user.getFirstName(), user.getLastName(), false);
     }
 
     @PostMapping("/register")
@@ -79,7 +79,7 @@ public class AuthController {
 
         try { recovery.issue(user.getUserId(), "verify"); }
         catch (IllegalStateException e) { /* Account remains pending; resend can retry safely. */ }
-        return new LoginResponse(user.getUserId(), user.getUserEmail(), true, user.getFirstName(), user.getLastName());
+        return new LoginResponse(user.getUserId(), user.getUserEmail(), user.getFirstName(), user.getLastName(), true);
     }
 
     // start a fresh session after login or registration
@@ -145,5 +145,5 @@ public class AuthController {
             )
             String password
     ) {}
-    public record LoginResponse(Long userId, String email, boolean created, String firstName, String lastName) {}
+    public record LoginResponse(Long userId, String email, String firstName, String lastName, boolean created) {}
 }

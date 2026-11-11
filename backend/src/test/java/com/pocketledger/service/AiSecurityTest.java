@@ -46,7 +46,9 @@ class AiSecurityTest {
         });
         assertEquals(ai.buildChatPayload(question()),text.toString());
         assertFalse(text.toString().contains("alice@")); assertFalse(text.toString().contains("backend-test-secret"));
-        assertFalse(new com.fasterxml.jackson.databind.ObjectMapper().readTree(text.toString()).has("tools"));
+        var payload = new com.fasterxml.jackson.databind.ObjectMapper().readTree(text.toString());
+        assertFalse(payload.has("tools"));
+        assertEquals("ministral-8b-latest", payload.path("model").textValue());
     }
     @Test void toolsArbitraryOperationsOversizedAndInvalidProviderResponsesFailClosed() throws Exception {
         for(String raw:List.of("{\"choices\":[{\"message\":{\"content\":\"{}\",\"tool_calls\":[]}}]}","x".repeat(32769),"{}",

@@ -57,6 +57,46 @@ class AiAssistantControllerTest {
             .andExpect(jsonPath("$.result").value("Expenses: 0.30."));
         verifyNoInteractions(interpreter);
     }
+    @Test void namedMonthBudgetUsesLocalAnalysisEvenWhenTheProviderIsUnavailable() throws Exception {
+        when(analysis.analyze(eq(7L),any())).thenReturn(new FinancialAnalysisService.Result("budget_status","Your October budget is 123.45.",AiInputMinimizer.Chart.bar,"2026-10-01","2026-10-31","ALL",List.of(),java.math.BigDecimal.ZERO,false));
+        for(String query:List.of("can you show me my october budget","explain my October budget"))
+            mvc.perform(ask("{\"query\":\""+query+"\"}").session(session)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.action").value("budget_status"))
+                .andExpect(jsonPath("$.result").value("Your October budget is 123.45."));
+        verify(analysis,times(2)).analyze(eq(7L),argThat(selection -> selection.period()==AiInputMinimizer.Period.SELECTED_MONTH && selection.selectedMonth().getMonthValue()==10));
+        verifyNoInteractions(interpreter);
+    }
+    @Test void unsupportedPersonalFinancePeriodsAskForClarificationWithoutCallingMistral() throws Exception {
+        mvc.perform(ask("{\"query\":\"show my budget between October and November\"}").session(session))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.action").value("CLARIFICATION_REQUIRED"));
+        verifyNoInteractions(interpreter,analysis);
+    }
+    @Test void naturalFinancialParaphraseGetsTrustedAnswerAndNeverDisplaysModelNumbers() throws Exception {
+        var selection=new AiInputMinimizer.Selection(AnalysisIntent.monthly_expenses,AiInputMinimizer.Period.LAST_MONTH,AiInputMinimizer.Category.Groceries,AiInputMinimizer.Chart.bar);
+        when(interpreter.converse(any())).thenReturn(new AiAssistantService.ChatReply("An untrusted invented total is 999999.",null,selection));
+        when(analysis.analyze(7L,selection)).thenReturn(new FinancialAnalysisService.Result("monthly_expenses","You spent 12.30 on groceries.",AiInputMinimizer.Chart.bar,"2026-10-01","2026-10-31","Groceries",List.of(),new java.math.BigDecimal("12.30"),false));
+        mvc.perform(ask("{\"query\":\"What did I shell out on food during the month before this one?\"}").session(session))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.result").value("You spent 12.30 on groceries."))
+            .andExpect(jsonPath("$.total").value("12.30"));
+        verify(analysis).analyze(7L,selection);
+        verify(interpreter,times(1)).converse(any());
+    }
+    @Test void naturalFollowupUsesOnlyFiniteContextAndKeepsAuthenticatedOwner() throws Exception {
+        var previous=new AiInputMinimizer.Selection(AnalysisIntent.budget_status,AiInputMinimizer.Period.SELECTED_MONTH,AiInputMinimizer.Category.ALL,AiInputMinimizer.Chart.bar,java.time.YearMonth.of(2026,10));
+        session.setAttribute("assistant.selection.v2",previous);
+        when(interpreter.converse(any())).thenReturn(new AiAssistantService.ChatReply("Checking the same period.",null,previous));
+        when(analysis.analyze(7L,previous)).thenReturn(new FinancialAnalysisService.Result("budget_status","You have 12.30 remaining.",AiInputMinimizer.Chart.bar,"2026-10-01","2026-10-31","ALL",List.of(),java.math.BigDecimal.ZERO,false));
+        mvc.perform(ask("{\"query\":\"And how much room did I have left then?\"}").session(session))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.result").value("You have 12.30 remaining."));
+        verify(interpreter).converse(argThat(message -> message.context().equals(previous)));
+        verify(analysis).analyze(7L,previous);
+    }
+    @Test void helpPlanningABudgetIsConversationNotAnUnavailableWriteOperation() throws Exception {
+        when(interpreter.converse(any())).thenReturn(new AiAssistantService.ChatReply("Start by listing income and fixed costs.",null));
+        mvc.perform(ask("{\"query\":\"Can you help me set a budget?\"}").session(session))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.action").value("CONVERSATION"));
+        verifyNoInteractions(analysis);
+    }
     @Test void generalQuestionsUseSanitizedTextAndNeverRunFinancialQueries() throws Exception {
         when(interpreter.converse(any())).thenReturn(new AiAssistantService.ChatReply("Here is a natural answer.",null));
         mvc.perform(ask("{\"query\":\"Explain compound interest; contact alice@example.com\"}").session(session))

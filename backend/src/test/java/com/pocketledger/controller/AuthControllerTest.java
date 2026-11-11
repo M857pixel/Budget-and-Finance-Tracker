@@ -103,6 +103,37 @@ class AuthControllerTest {
         // Validation must reject every example before database access or password hashing.
         verifyNoInteractions(users, passwords);
     }
+    @Test void verifiedLoginReturnsGreetingFieldsAndRotatesVersionedSession() throws Exception {
+        User user = mock(User.class);
+        when(users.findByUserEmailIgnoreCase("sam@example.com")).thenReturn(Optional.of(user));
+        when(user.getUserId()).thenReturn(7L);
+        when(user.getUserEmail()).thenReturn("sam@example.com");
+        when(user.getFirstName()).thenReturn("Sam");
+        when(user.getLastName()).thenReturn("Lee");
+        when(user.getPasswordHash()).thenReturn("private-hash");
+        when(user.isEmailVerified()).thenReturn(true);
+        when(user.getSessionVersion()).thenReturn(3L);
+        when(passwords.matches("Strong1!", "private-hash")).thenReturn(true);
+        var previous = new org.springframework.mock.web.MockHttpSession();
+        previous.setAttribute("userId", 99L);
+        mvc.perform(post("/api/login").session(previous).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"Sam@Example.com\",\"password\":\"Strong1!\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.userId").value(7))
+            .andExpect(jsonPath("$.firstName").value("Sam"))
+            .andExpect(jsonPath("$.lastName").value("Lee"))
+            .andExpect(jsonPath("$.created").value(false))
+            .andExpect(jsonPath("$.passwordHash").doesNotExist())
+            .andExpect(result -> {
+                assertTrue(previous.isInvalid());
+                var current = result.getRequest().getSession(false);
+                assertNotNull(current);
+                assertNotEquals(previous.getId(), current.getId());
+                assertEquals(7L, current.getAttribute("userId"));
+                assertEquals(3L, current.getAttribute("sessionVersion"));
+                assertInstanceOf(Long.class, current.getAttribute("authenticatedAt"));
+            });
+    }
     @Test void deniesUnverifiedLogin() throws Exception {
         User user = mock(User.class);
         when(users.findByUserEmailIgnoreCase("sam@example.com")).thenReturn(Optional.of(user));

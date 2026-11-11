@@ -6,7 +6,10 @@ import java.util.regex.Pattern;
 /** Best-effort DLP for general conversation. Financial records never enter this path. */
 @Component
 public class ChatSanitizer {
-    public record Message(String text, boolean blocked) {}
+    public record Message(String text, boolean blocked, AiInputMinimizer.Selection context) {
+        public Message(String text,boolean blocked) { this(text,blocked,null); }
+        public Message withContext(AiInputMinimizer.Selection context) { return new Message(text,blocked,context); }
+    }
     private static final Pattern SECRET=Pattern.compile(
         "(?is)(?:password|passwd|pwd|api[ _-]?key|secret|access[ _-]?token|refresh[ _-]?token|authorization|session[ _-]?(?:id|cookie))\\s*(?::|=|is\\b)\\s*\\S+"
         +"|\\b(?:Bearer\\s+\\S+|eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)"

@@ -42,7 +42,7 @@ class FinancialAnalysisServiceTest {
         doReturn(List.of(row(11,"Rent","100.25","5000.00"))).when(transactions).analysisTotals(eq(7L),any(),any());
         when(budgets.findByUser_UserIdAndBudgetMonth(7L,today.withDayOfMonth(1))).thenReturn(Optional.of(new MonthlyBudget(mock(User.class),today.withDayOfMonth(1),new BigDecimal("100.00"))));
         var result=service.analyze(7L,new Selection(AnalysisIntent.budget_status,Period.THIS_MONTH,Category.ALL,Chart.bar),today);
-        assertTrue(result.result().contains("Over budget: 0.25"));
+        assertTrue(result.result().contains("0.25 over budget"));
         assertEquals(2,result.data().size()); assertEquals(new BigDecimal("100.25"),result.total());
         verify(budgets).findByUser_UserIdAndBudgetMonth(7L,today.withDayOfMonth(1));
     }

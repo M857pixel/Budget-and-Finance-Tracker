@@ -63,6 +63,13 @@ describe('read-only financial insights', () => {
         await screen.findByText('Mistral is limiting requests. Wait before retrying; check your Mistral account usage limits if this continues.')
         expect(screen.queryByText('private details')).toBeNull()
     })
+    it('reports an unreadable model response as an interpretation issue rather than analysis being unavailable', async () => {
+        fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({ code: 'INVALID_RESPONSE' }) })
+        render(<AssistantChat />)
+        fireEvent.change(screen.getByLabelText('Ask a question'), { target: { value: 'Could you explain this?' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Analyze' }))
+        await screen.findByText('I could not interpret that reply safely. Please rephrase your question; no records were changed.')
+    })
     it('clears server-side conversation context without submitting financial results', async () => {
         render(<AssistantChat />)
         fireEvent.click(screen.getByRole('button', { name: 'Clear context' }))

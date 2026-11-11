@@ -27,6 +27,7 @@ export default function AssistantChat() {
                     MISSING_KEY: 'The backend Mistral API key is not configured.',
                     PROVIDER_AUTHORIZATION: 'Mistral rejected the backend API credentials. Check the API key and account access.',
                     PROVIDER_UNAVAILABLE: 'Mistral is temporarily unavailable. Please try again later.',
+                    INVALID_RESPONSE: 'I could not interpret that reply safely. Please rephrase your question; no records were changed.',
                 }
                 if (error?.code && providerErrors[error.code]) { setAnswer(providerErrors[error.code]); return }
                 setAnswer(response.status === 401 ? 'Please log in again.'

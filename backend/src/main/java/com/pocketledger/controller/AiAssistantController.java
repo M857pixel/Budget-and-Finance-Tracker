@@ -61,8 +61,11 @@ public class AiAssistantController {
         if(query.toLowerCase(java.util.Locale.ROOT).matches("(?s).*(?:ignore.*instructions|override.*permissions|another.*user[_ ]?id).*"))
             return message("ACCESS_RESTRICTED","I cannot bypass permissions or access another user's account.");
         Selection previous=session.getAttribute(CONTEXT) instanceof Selection selection ? selection : null;
+        boolean personalFinance=query.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\bmy\\b.*")
+            && query.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\b(?:spending|expenses|income|budget|balance|transactions)\\b.*");
         boolean general=query.strip().toLowerCase(java.util.Locale.ROOT).matches("(?s)^(?:what is|what are|explain|how |why |tell me about|write|draw|illustrate|create|generate).*" )
-            && !query.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\bmy (?:spending|expenses|income|budget)\\b.*");
+            && !personalFinance
+            || query.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\b(?:help me|teach me|advice|tips)\\b.*");
         Prepared prepared=minimizer.prepare(query,previous);
         if(!general && prepared.modification() && query.toLowerCase(java.util.Locale.ROOT).matches("(?s).*\\b(?:transactions?|records?|budget|balance|account)\\b.*"))
             return message("READ_ONLY","I can preview category changes. Use the regular authenticated transaction interface for creating/deleting transactions and changing amounts or budgets.");
@@ -74,10 +77,17 @@ public class AiAssistantController {
         }
         if(previous==null && query.strip().matches("(?i)(?:what about|how about) (?:last|this) (?:month|year)[?!.]?"))
             return message("CLARIFICATION_REQUIRED","Which analysis would you like: spending, income, or budget status?");
+        if(!general && minimizer.needsPeriodClarification(query) && (personalFinance || prepared.selection()!=null))
+            return message("CLARIFICATION_REQUIRED","Please choose one supported period: a named month such as October 2026, this/last month, this/last year, or the last 6/12 months. I have not sent your request or records to Mistral.");
         var educational=EducationalPlot.from(query);
         if(educational.isPresent()) return educational.get();
         try {
-            var reply=interpreter.converse(sanitized);
+            var reply=interpreter.converse(sanitized.withContext(previous));
+            if(reply.analysis()!=null) {
+                var result=analysis.analyze(owner,reply.analysis());
+                session.setAttribute(CONTEXT,reply.analysis());
+                return result; // Never send the result back to the model or display its speculative acknowledgement.
+            }
             return new ConversationResponse("CONVERSATION",reply.reply(),reply.diagram());
         } catch(AiAssistantService.Unavailable e) { throw e; }
         catch(IllegalStateException e) { throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"The conversation service is unavailable. No records were changed."); }
@@ -109,6 +119,7 @@ public class AiAssistantController {
             case MISSING_KEY -> "The backend's Mistral API key is not configured.";
             case PROVIDER_AUTHORIZATION -> "Mistral rejected the backend's API credentials. Check its API key and account access.";
             case PROVIDER_UNAVAILABLE -> "Mistral is temporarily unavailable. Please try again later.";
+            case INVALID_RESPONSE -> "I could not interpret that reply safely. Please rephrase your question; no records were changed.";
         };
         return Map.of("code",e.failure().name(),"message",message);
     }
