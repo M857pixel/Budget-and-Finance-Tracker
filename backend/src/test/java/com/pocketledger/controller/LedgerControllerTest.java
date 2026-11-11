@@ -57,8 +57,20 @@ class LedgerControllerTest {
     // This checks which query is called, rather than real database rows or sorting.
     @Test
     void historyQueriesOnlyTheAuthenticatedUsersRows() throws Exception {
-        mvc.perform(get("/api/users/7/transactions").sessionAttr("userId", 7L))
-                .andExpect(status().isOk());
+        User user = mock(User.class);
+        when(user.getUserId()).thenReturn(7L);
+        when(transactions.findByUser_UserIdOrderByTransactionDateDesc(7L)).thenReturn(java.util.List.of(
+                new Transaction(user, "Groceries", "Food", new java.math.BigDecimal("12.34"),
+                        java.time.LocalDate.of(2026, 11, 2), "Weekly shopping")));
+        mvc.perform(get("/api/users/7/transactions").sessionAttr("userId", 7L)
+                        .header("Origin", "http://localhost:5173"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
+                .andExpect(header().string("Access-Control-Allow-Credentials", "true"))
+                .andExpect(jsonPath("$[0].userId").value(7))
+                .andExpect(jsonPath("$[0].name").value("Groceries"))
+                .andExpect(jsonPath("$[0].amount").value(12.34))
+                .andExpect(jsonPath("$[0].date").value("2026-11-02"));
         // Verify that the controller asks specifically for user 7's transactions.
         verify(transactions).findByUser_UserIdOrderByTransactionDateDesc(7L);
     }
@@ -90,5 +102,57 @@ class LedgerControllerTest {
                     .andExpect(header().string("Access-Control-Allow-Origin", origin))
                     .andExpect(header().string("Access-Control-Allow-Credentials", "true"));
         }
+    }
+
+    @Test
+    void updatesAmountAndReturnsItInHistoryAndMonthlyTotal() throws Exception {
+        User user = mock(User.class);
+        when(user.getUserId()).thenReturn(7L);
+        var transaction = new Transaction(user, "Groceries", "Food", new java.math.BigDecimal("-12.34"),
+                java.time.LocalDate.of(2026, 11, 2), "Weekly shopping");
+        when(transactions.findByUser_UserIdAndTransactionId(7L, 42L)).thenReturn(Optional.of(transaction));
+        when(transactions.save(any(Transaction.class))).thenAnswer(call -> call.getArgument(0));
+        when(transactions.findByUser_UserIdOrderByTransactionDateDesc(7L)).thenReturn(java.util.List.of(transaction));
+        for (String amount : new String[]{"-25.50", "25.50", "0"}) {
+            mvc.perform(patch("/api/users/7/transactions/42").sessionAttr("userId", 7L)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":" + amount + "}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.amount").value(Double.parseDouble(amount)))
+                    .andExpect(jsonPath("$.name").value("Groceries"))
+                    .andExpect(jsonPath("$.date").value("2026-11-02"));
+            mvc.perform(get("/api/users/7/transactions").sessionAttr("userId", 7L))
+                    .andExpect(jsonPath("$[0].amount").value(Double.parseDouble(amount)));
+            mvc.perform(get("/api/users/7/transactions/total?month=2026-11").sessionAttr("userId", 7L))
+                    .andExpect(content().string(amount));
+        }
+        verify(transactions, times(3)).save(transaction);
+    }
+
+    @Test
+    void rejectsUnauthorizedAndMissingTransactionUpdates() throws Exception {
+        String url = "/api/users/7/transactions/42";
+        mvc.perform(patch(url).contentType(MediaType.APPLICATION_JSON).content("{\"amount\":10}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(patch(url).sessionAttr("userId", 8L).contentType(MediaType.APPLICATION_JSON).content("{\"amount\":10}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(users, transactions);
+        // The user-scoped lookup also hides transactions belonging to a different owner.
+        mvc.perform(patch(url).sessionAttr("userId", 7L).contentType(MediaType.APPLICATION_JSON).content("{\"amount\":10}"))
+                .andExpect(status().isNotFound());
+        verify(transactions, never()).save(any());
+    }
+
+    @Test
+    void rejectsInvalidAmountsWithoutChangingTheTransaction() throws Exception {
+        var transaction = new Transaction(mock(User.class), "Groceries", "Food", new java.math.BigDecimal("12.34"),
+                java.time.LocalDate.of(2026, 11, 2), null);
+        when(transactions.findByUser_UserIdAndTransactionId(7L, 42L)).thenReturn(Optional.of(transaction));
+        for (String amount : new String[]{"1.001", "-1.001", "10000000000", "-10000000000", "\"NaN\"", "\"Infinity\"", "\"abc\""}) {
+            mvc.perform(patch("/api/users/7/transactions/42").sessionAttr("userId", 7L)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":" + amount + "}"))
+                    .andExpect(status().isBadRequest());
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(new java.math.BigDecimal("12.34"), transaction.getTransactionAmount());
+        verify(transactions, never()).save(any());
     }
 }

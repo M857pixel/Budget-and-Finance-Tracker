@@ -1,6 +1,19 @@
 /*
-    Connects HTTP requests from the frontend to the repositories that read and
-    write users and transactions.
+    LedgerController
+
+    Main REST controller for user and transaction operations in PocketLedger.
+    This class connects frontend and AI-agent requests to the user and transaction
+    repositories, allowing the system to create, retrieve, update, total, filter,
+    and delete financial data.
+
+    Most transaction queries are used by the AI budgeting assistant to retrieve
+    user-specific financial information, while other endpoints support normal
+    application features such as transaction history, editing, deletion, and
+    monthly spending totals.
+
+    Secured transaction endpoints verify that the logged-in user's session ID
+    matches the requested user ID before allowing database access, preventing
+    users from accessing another account's financial data.
 
     Start the backend before running these examples. Replace each placeholder
     with a value. The secured transaction endpoints require a login session for
@@ -157,6 +170,14 @@ public class LedgerController {
     transaction amounts.
     @Return: List<TransactionResponse>
     */
+    @GetMapping("/users/{userId}/transactions")
+    public List<TransactionResponse> getTransactions(@PathVariable Long userId,
+                                                      HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        return transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId)
+                .stream().map(LedgerController::toResponse).toList();
+    }
+
     @GetMapping("/users/{userId}/transactions/total")
     public BigDecimal getTransactionTotalByMonth(@PathVariable Long userId,
                                                  @RequestParam java.time.YearMonth month,
@@ -171,16 +192,20 @@ public class LedgerController {
 
     /*
     Categorization Query:
-    Get transactions matching both the user ID and transaction type
+    Get transactions matching the userId, transaction type, and month
     @Returns: List<TransactionResponse> (of all the same type and user)
     */
     @GetMapping("/users/{userId}/transactions/type/{type}")
     public List<TransactionResponse> getTransactionsByType(@PathVariable Long userId,
-                                                           @PathVariable String type, HttpServletRequest httpRequest) {
+                                                           @PathVariable String type,
+                                                           @RequestParam java.time.YearMonth month,
+                                                           HttpServletRequest httpRequest) {
         requireUser(userId, httpRequest);
         return transactionRepository
                 .findByUser_UserIdAndTransactionTypeOrderByTransactionDateDesc(userId, type)
-                .stream().map(LedgerController::toResponse).toList();
+                .stream()
+                .filter(transaction -> java.time.YearMonth.from(transaction.getTransactionDate()).equals(month))
+                .map(LedgerController::toResponse).toList();
     }
 
     /*
@@ -194,6 +219,12 @@ public class LedgerController {
         requireUser(userId, httpRequest);
         Transaction transaction = transactionRepository.findByUser_UserIdAndTransactionId(userId, transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
+
+        BigDecimal amount = request.amount();
+        if (amount != null && (amount.abs().compareTo(new BigDecimal("9999999999.99")) > 0
+                || amount.stripTrailingZeros().scale() > 2)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Enter an amount with at most two decimal places.");
+        }
 
         transaction.updateDetails(
                 request.name(),
@@ -235,9 +266,11 @@ public class LedgerController {
                 .toList();
     }
 
-    // Used by each transaction endpoint before database access. AuthController stores
-    // userId in the server session at login; changing the URL must not grant access
-    // to another account's transactions.
+    /*
+    Used by each transaction endpoint before database access. AuthController stores
+    userId in the server session at login; changing the URL must not grant access
+    to another account's transactions.
+     */
     private static void requireUser(Long userId, HttpServletRequest request) {
         // Read an existing session without creating one for an unauthenticated request.
         var session = request.getSession(false);

@@ -1,4 +1,7 @@
 import './App.css'
+import AssistantChat from './AssistantChat'
+import MonthlySummary from './MonthlySummary'
+import TransactionAmount from './TransactionAmount'
 import { useEffect, useState } from 'react'
 import CurrencyConverter from './CurrencyConverter'
 
@@ -25,6 +28,7 @@ const displayDate = (date: string) => {
 function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+    const [currentUserName, setCurrentUserName] = useState('')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loginError, setLoginError] = useState('')
@@ -70,9 +74,10 @@ function App() {
             })
             if (response.ok) {
                 // keep the user ID for transaction requests
-                const user: { userId: number; email: string } = await response.json()
+                const user: { userId: number; email: string; firstName: string; lastName: string } = await response.json()
                 sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
                 setCurrentUserId(user.userId)
+                setCurrentUserName([user.firstName, user.lastName].filter(Boolean).join(' '))
                 setPassword('')
                 setFirstName('')
                 setLastName('')
@@ -107,6 +112,7 @@ function App() {
     const [transactionDate, setTransactionDate] = useState('')
     const [transactionDescription, setTransactionDescription] = useState('')
     const [isSaving, setIsSaving] = useState(false)
+    const [summaryRefresh, setSummaryRefresh] = useState(0)
     const [activeTab, setActiveTab] = useState<'add' | 'currency' | 'history' | 'import'>('add')
 
     // saved transactions and history feedback
@@ -187,6 +193,7 @@ function App() {
             })
             if (response.ok) {
                 setMessage('Transaction saved successfully.')
+                setSummaryRefresh((value) => value + 1)
                 resetTransaction()
             } else {
                 setMessage(`Transaction could not be saved (${response.status}). Check the fields and try again.`)
@@ -255,6 +262,7 @@ function App() {
             if (!importResponse.ok) {
                 const error = await importResponse.json().catch(() => null)
 
+            if (response.ok) setSummaryRefresh((value) => value + 1)
                 setMessage(
                     error?.message
                     ?? error?.detail
@@ -342,6 +350,7 @@ function App() {
     return (
         <main className="dashboard">
             <h1>PocketLedger</h1>
+            <p>Hello{currentUserName ? `, ${currentUserName}` : ''}</p>
             <button onClick={async () => {
                 // end the session before returning to login
                 try {
@@ -361,6 +370,7 @@ function App() {
                 setTransactions([])
                 setHistoryError('')
                 setCurrentUserId(null)
+                setCurrentUserName('')
                 setIsLoggedIn(false)
                 setEmail('')
                 setPassword('')
@@ -369,6 +379,8 @@ function App() {
                 resetTransaction()
                 setActiveTab('add')
             }}>Log out</button>
+
+            {currentUserId !== null && <MonthlySummary key={currentUserId} userId={currentUserId} refresh={summaryRefresh} />}
 
             {/* top bar switches between the main features */}
             <nav className="topbar">
@@ -402,9 +414,6 @@ function App() {
             <section className="content">
                 {activeTab === 'add' && (
                     <section className="transaction-add">
-                        <h2>Current balance</h2>
-                        {/* placeholder balance until it is connected to backend data */}
-                        <p className="balance">$0.00</p>
 
                         <form className="transaction-form" onSubmit={(event) => {
                                 event.preventDefault()
@@ -481,7 +490,12 @@ function App() {
                                         <tr key={transaction.transactionId}>
                                             <td>{transaction.name}</td>
                                             <td>{transaction.type}</td>
-                                            <td>{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(transaction.amount)}</td>
+                                            <td><TransactionAmount userId={transaction.userId} transactionId={transaction.transactionId}
+                                                amount={transaction.amount} onSaved={(amount) => {
+                                                    setTransactions((current) => current.map((saved) => saved.transactionId === transaction.transactionId
+                                                        ? { ...saved, amount } : saved))
+                                                    setSummaryRefresh((value) => value + 1)
+                                                }} /></td>
                                             <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
                                             <td>{transaction.description || '—'}</td>
                                         </tr>
@@ -517,6 +531,7 @@ function App() {
                     </section>
                 )}
             </section>
+            <AssistantChat />
         </main>
     )
 }

@@ -319,6 +319,44 @@ textarea:focus-visible {
   overflow-x: auto;
 }
 
+.assistant-chat {
+  position: fixed;
+  top: 825px;
+  left: 16px;
+  width: 440px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f4f6f8;
+  text-align: left;
+}
+
+.assistant-chat form {
+  display: grid;
+  gap: 8px;
+}
+
+.assistant-chat input {
+  width: 100%;
+  min-width: 0;
+}
+
+.assistant-chat p {
+  margin-top: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Use normal page flow when the left margin is too narrow. */
+@media (max-width: 1620px) {
+  .assistant-chat {
+    position: static;
+    max-width: 100%;
+    margin-top: 20px;
+  }
+}
 .transaction-history table {
   width: 100%;
   border-collapse: collapse;
@@ -334,4 +372,100 @@ textarea:focus-visible {
 
 .transaction-history time {
   white-space: nowrap;
+}
+
+
+.monthly-summary {
+  margin: 24px 0;
+  text-align: left;
+}
+
+.summary-month {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.summary-card {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.summary-card h2 {
+  font-size: 1rem;
+  color: #596579;
+}
+
+.budget-value {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.budget-value:hover {
+  text-decoration: underline;
+}
+
+.budget-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.summary-card p,
+.summary-card .budget-value {
+  display: flex;
+  align-items: center;
+  margin: 16px 0;
+  min-height: 44px;
+  font-size: clamp(1.25rem, 3vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.budget-value span {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.editable-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.editable-amount-icon {
+  width: 0.8em;
+  height: 0.8em;
+  flex-shrink: 0;
+}
+
+.transaction-amount-value {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  padding: 0;
+}
+
+.transaction-amount-value:hover {
+  text-decoration: underline;
 }

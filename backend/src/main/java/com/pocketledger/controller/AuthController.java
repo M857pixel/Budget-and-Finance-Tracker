@@ -38,7 +38,7 @@ public class AuthController {
                     HttpStatus.UNAUTHORIZED, "Incorrect email or password.");
         }
         startSession(request, user);
-        return new LoginResponse(user.getUserId(), user.getUserEmail(), false);
+        return new LoginResponse(user.getUserId(), user.getUserEmail(), user.getFirstName(), user.getLastName(), false);
     }
 
     @PostMapping("/register")
@@ -69,7 +69,7 @@ public class AuthController {
         }
 
         startSession(request, user);
-        return new LoginResponse(user.getUserId(), user.getUserEmail(), true);
+        return new LoginResponse(user.getUserId(), user.getUserEmail(), user.getFirstName(), user.getLastName(), true);
     }
 
     // start a fresh session after login or registration
@@ -103,5 +103,5 @@ public class AuthController {
             )
             String password
     ) {}
-    public record LoginResponse(Long userId, String email, boolean created) {}
+    public record LoginResponse(Long userId, String email, String firstName, String lastName, boolean created) {}
 }
