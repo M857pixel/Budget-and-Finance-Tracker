@@ -2,6 +2,7 @@ import './App.css'
 import AccountRecovery from './AccountRecovery'
 import AssistantChat from './AssistantChat'
 import MonthlySummary from './MonthlySummary'
+import TransactionAmount from './TransactionAmount'
 import { useEffect, useState } from 'react'
 
 // array of selectable transaction types
@@ -33,6 +34,7 @@ function App() {
     }, [])
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+    const [currentUserName, setCurrentUserName] = useState('')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loginError, setLoginError] = useState('')
@@ -79,9 +81,10 @@ function App() {
             if (response.ok) {
                 if (isCreatingAccount) { setPassword(''); setRecovery('pending'); return }
                 // keep the user ID for transaction requests
-                const user: { userId: number; email: string } = await response.json()
+                const user: { userId: number; email: string; firstName: string; lastName: string } = await response.json()
                 sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
                 setCurrentUserId(user.userId)
+                setCurrentUserName([user.firstName, user.lastName].filter(Boolean).join(' '))
                 setPassword('')
                 setFirstName('')
                 setLastName('')
@@ -311,6 +314,7 @@ function App() {
     return (
         <main className="dashboard">
             <h1>PocketLedger</h1>
+            <p>Hello{currentUserName ? `, ${currentUserName}` : ''}</p>
             <button onClick={async () => {
                 // end the session before returning to login
                 try {
@@ -330,6 +334,7 @@ function App() {
                 setTransactions([])
                 setHistoryError('')
                 setCurrentUserId(null)
+                setCurrentUserName('')
                 setIsLoggedIn(false)
                 setEmail('')
                 setPassword('')
@@ -449,7 +454,12 @@ function App() {
                                         <tr key={transaction.transactionId}>
                                             <td>{transaction.name}</td>
                                             <td>{transaction.type}</td>
-                                            <td>{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(transaction.amount)}</td>
+                                            <td><TransactionAmount userId={transaction.userId} transactionId={transaction.transactionId}
+                                                amount={transaction.amount} onSaved={(amount) => {
+                                                    setTransactions((current) => current.map((saved) => saved.transactionId === transaction.transactionId
+                                                        ? { ...saved, amount } : saved))
+                                                    setSummaryRefresh((value) => value + 1)
+                                                }} /></td>
                                             <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
                                             <td>{transaction.description || '—'}</td>
                                         </tr>

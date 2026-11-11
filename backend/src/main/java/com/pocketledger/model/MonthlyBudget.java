@@ -1,3 +1,16 @@
+/*
+   Maps to the monthly_budgets table using JPA.
+   Represents a single row in the monthly_budgets table.
+
+   @Entity tells JPA this class represents a database.
+   @Table connects to table created in migration by name.
+   @Id marks the primary key.
+   @ManyToOne  tells many transactions can belong to one user.
+   @JoinColumn maps that relationship to the foreign key column in migration.
+   @Column annotation connects java fields to Supabase column names.
+   @GeneratedValue tells JPA it is a generated value when row is created.
+ */
+
 package com.pocketledger.model;
 
 import jakarta.persistence.Column;
@@ -35,8 +48,10 @@ public class MonthlyBudget {
     @Column(name = "budget_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal budgetAmount;
 
+    //JPA needs a no argument constructor to create users when reading rows
     protected MonthlyBudget() {}
 
+    //Constructor to create monthly budget before saving
     public MonthlyBudget(User user, LocalDate budgetMonth, BigDecimal budgetAmount) {
         this.user = user;
         this.budgetMonth = budgetMonth;
