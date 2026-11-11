@@ -3,6 +3,7 @@ import AssistantChat from './AssistantChat'
 import MonthlySummary from './MonthlySummary'
 import TransactionAmount from './TransactionAmount'
 import { useEffect, useState } from 'react'
+import CurrencyConverter from './CurrencyConverter'
 
 // array of selectable transaction types
 const transactionTypes = ['Clothing', 'Entertainment', 'Transport', 'Groceries', 'Salary', 'Rent', 'Other' ]
@@ -112,7 +113,7 @@ function App() {
     const [transactionDescription, setTransactionDescription] = useState('')
     const [isSaving, setIsSaving] = useState(false)
     const [summaryRefresh, setSummaryRefresh] = useState(0)
-    const [activeTab, setActiveTab] = useState<'add' | 'modify' | 'history' | 'import'>('add')
+    const [activeTab, setActiveTab] = useState<'add' | 'currency' | 'history' | 'import'>('add')
 
     // saved transactions and history feedback
     const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -208,32 +209,84 @@ function App() {
     const [uploading, setUploading] = useState(false)
 
     const uploadFile = async () => {
-        if (!selectedFile) return
+        // Require a file and prevent repeated clicks during an import.
+        if (!selectedFile || uploading) return
 
+        // Transactions must belong to a logged-in user.
+        if (currentUserId === null) {
+            setMessage('Please log in before importing transactions.')
+            return
+        }
+
+        // Package the selected file for the upload endpoint.
+        const api = `http://${window.location.hostname}:8080/api`
         const formData = new FormData()
         formData.append('file', selectedFile)
 
         setUploading(true)
-        setMessage('')
+        setMessage('Uploading and validating CSV...')
+
+        // Track whether saving may have started if the connection fails.
+        let importStarted = false
+
         try {
-            const response = await fetch(
-                `http://${window.location.hostname}:8080/api/import`,
-                {
-                    method: 'POST',
-                    credentials: 'include',
-                    body: formData,
-                },
-            )
+            // Validate and normalize the CSV, then store it in the session.
+            const uploadResponse = await fetch(`${api}/import`, {
+                method: 'POST',
+                credentials: 'include',
+                body: formData,
+            })
+
+            // Display the rejection reason and stop if validation fails.
+            if (!uploadResponse.ok) {
+                const error = await uploadResponse.json().catch(() => null)
+
+                setMessage(
+                    error?.message
+                    ?? error?.detail
+                    ?? `Upload failed (${uploadResponse.status}).`,
+                )
+                return
+            }
+
+            setMessage('Importing transactions...')
+            importStarted = true
+
+            // Extract and save the uploaded rows using the same login session.
+            const importResponse = await fetch(`${api}/import/transactions`, {
+                method: 'POST',
+                credentials: 'include',
+            })
+
+            // Display any errors encountered while extracting or saving rows.
+            if (!importResponse.ok) {
+                const error = await importResponse.json().catch(() => null)
 
             if (response.ok) setSummaryRefresh((value) => value + 1)
+                setMessage(
+                    error?.message
+                    ?? error?.detail
+                    ?? `Transaction import failed (${importResponse.status}).`,
+                )
+                return
+            }
+
+            // Show how many transactions the backend successfully imported.
+            const result: { importedCount: number } =
+                await importResponse.json()
+
             setMessage(
-                response.ok
-                    ? `Uploaded ${selectedFile.name}.`
-                    : `Upload failed (${response.status}).`,
+                `Successfully imported ${result.importedCount} transaction`
+                + `${result.importedCount === 1 ? '' : 's'}. `
+                + 'Open Transaction History to view them.',
             )
         } catch {
-            setMessage('Could not connect to the backend.')
+
+            setMessage(importStarted
+                ? 'Could not confirm the import result. Check Transaction History before retrying.'
+                : 'Could not connect to the backend.')
         } finally {
+            // Re-enable the upload controls after success or failure.
             setUploading(false)
         }
     }
@@ -338,10 +391,10 @@ function App() {
                     Add Transaction
                 </button>
                 <button
-                    className={activeTab === 'modify' ? 'active' : ''}
-                    onClick={() => setActiveTab('modify')}
+                    className={activeTab === 'currency' ? 'active' : ''}
+                    onClick={() => setActiveTab('currency')}
                 >
-                    Modify Transaction
+                    Currency Converter
                 </button>
                 <button
                     className={activeTab === 'history' ? 'active' : ''}
@@ -418,7 +471,7 @@ function App() {
                 )}
 
                 {/* placeholders for future functionality*/}
-                {activeTab === 'modify' && <p>Modify Transaction UI goes here.</p>}
+                {activeTab === 'currency' && <CurrencyConverter />}
                 {/* saved transaction history */}
                 {activeTab === 'history' && (
                     <section className="transaction-history">
