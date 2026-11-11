@@ -1,4 +1,5 @@
 import './App.css'
+import AccountRecovery from './AccountRecovery'
 import AssistantChat from './AssistantChat'
 import MonthlySummary from './MonthlySummary'
 import { useEffect, useState } from 'react'
@@ -24,6 +25,12 @@ const displayDate = (date: string) => {
 }
 
 function App() {
+    const [recovery, setRecovery] = useState(() => window.location.hash.startsWith('#verify=') ? 'verify' : window.location.hash.startsWith('#reset=') ? 'reset' : '')
+    useEffect(() => {
+        const followAuthLink = () => setRecovery(window.location.hash.startsWith('#verify=') ? 'verify' : window.location.hash.startsWith('#reset=') ? 'reset' : '')
+        window.addEventListener('hashchange', followAuthLink)
+        return () => window.removeEventListener('hashchange', followAuthLink)
+    }, [])
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [currentUserId, setCurrentUserId] = useState<number | null>(null)
     const [email, setEmail] = useState('')
@@ -70,6 +77,7 @@ function App() {
                     : { email: email.trim(), password }),
             })
             if (response.ok) {
+                if (isCreatingAccount) { setPassword(''); setRecovery('pending'); return }
                 // keep the user ID for transaction requests
                 const user: { userId: number; email: string } = await response.json()
                 sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
@@ -80,7 +88,7 @@ function App() {
                 setAuthScreen('login')
                 setIsLoggedIn(true)
             } else if (response.status === 401 || response.status === 403) {
-                setLoginError('Incorrect email or password.')
+                setLoginError(response.status === 403 ? 'Verify your email before logging in. Use resend verification below.' : 'Incorrect email or password.')
             } else if (response.status === 400) {
                 setLoginError(isCreatingAccount
                     ? 'Check your name, email, and password requirements.'
@@ -109,6 +117,11 @@ function App() {
     const [transactionDescription, setTransactionDescription] = useState('')
     const [isSaving, setIsSaving] = useState(false)
     const [summaryRefresh, setSummaryRefresh] = useState(0)
+    useEffect(() => {
+        const refreshCategories = () => setSummaryRefresh(value => value + 1)
+        window.addEventListener('ledger-categories-changed', refreshCategories)
+        return () => window.removeEventListener('ledger-categories-changed', refreshCategories)
+    }, [])
     const [activeTab, setActiveTab] = useState<'add' | 'modify' | 'history' | 'import'>('add')
 
     // saved transactions and history feedback
@@ -150,7 +163,7 @@ function App() {
         void loadHistory()
         // cancel the request when leaving history or switching users
         return () => controller.abort()
-    }, [activeTab, currentUserId])
+    }, [activeTab, currentUserId, summaryRefresh])
 
     const resetTransaction = () => {
         setAmount('')
@@ -242,6 +255,8 @@ function App() {
         setMessage(text)
     }
 
+    if (recovery) return <AccountRecovery mode={recovery} email={email} back={() => { history.replaceState(null, '', window.location.pathname); setRecovery(''); setAuthScreen('login') }} />
+
     if (!isLoggedIn) {
         return (
             <main className="auth-screen">
@@ -285,6 +300,8 @@ function App() {
                     <button type="button" className="auth-secondary" disabled={isLoggingIn} onClick={switchAuthScreen}>
                         {authScreen === 'create' ? 'Back to log in' : 'Create account'}
                     </button>
+                    <button type="button" onClick={() => setRecovery('forgot')}>Forgot password?</button>
+                    <button type="button" onClick={() => setRecovery('pending')}>Resend verification</button>
                     {loginError && <p role="alert">{loginError}</p>}
                 </form>
             </main>
@@ -444,6 +461,7 @@ function App() {
                 {/* import CSV file */}
                 {activeTab === 'import' && (
                     <section>
+                        <p>Rows without a category are categorized automatically. Uncertain matches stay Other. Optional category or type columns preserve your chosen categories.</p>
                         <label>
                             Select a file
                             <input

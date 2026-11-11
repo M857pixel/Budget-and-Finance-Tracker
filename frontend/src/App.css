@@ -438,3 +438,25 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* Financial insights; scoped so the regular transaction interface keeps its layout. */
+.assistant-chat { width: min(100%, 480px); box-sizing: border-box; }
+.assistant-title, .assistant-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.assistant-title h2 { margin: 0; }
+.analysis-badge { border: 1px solid var(--accent-border); border-radius: 16px; padding: 2px 10px; font-size: .75rem; color: var(--accent); background: var(--accent-bg); }
+.assistant-chat .assistant-hint, .assistant-chat .analysis-period { font-size: .8rem; }
+.assistant-chat select { margin: 8px 0 16px; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-h); }
+.analysis-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--bg); }
+.analysis-card h3 { text-transform: capitalize; margin: 0; font-size: 1rem; }
+.analysis-plot { height: 250px; width: 100%; min-width: 0; }
+.analysis-tooltip { background: #101828; color: #fff; border-radius: 8px; padding: 8px 12px; box-shadow: var(--shadow); font-size: .8rem; }
+.analysis-card table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+.analysis-card th, .analysis-card td { text-align: left; padding: 6px; border-bottom: 1px solid var(--border); }
+.analysis-card summary { cursor: pointer; font-size: .85rem; }
+@media (max-width: 1620px) { .assistant-chat { width: 100%; } }
+.conversation-diagram { margin: 16px 0; }
+.conversation-diagram svg { width: 100%; height: auto; }
+.conversation-diagram figcaption { font-size: .75rem; }
+.category-preview { overflow-x: auto; }
+.category-preview table { border-collapse: collapse; width: 100%; font-size: .8rem; }
+.category-preview th, .category-preview td { padding: 6px; border-bottom: 1px solid var(--border); text-align: left; }

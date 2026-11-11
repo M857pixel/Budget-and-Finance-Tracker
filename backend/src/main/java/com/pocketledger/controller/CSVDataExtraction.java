@@ -172,7 +172,17 @@ class CSVExtractor {
 
                 LocalDate date = parseDate(row.get("date").trim(), row.getRecordNumber());
                 // The CSV supplies transaction details; the signed-in user supplies ownership.
-                transactions.add(new Transaction(user, name, null, amount, date, null));
+                String description = row.isMapped("description") ? row.get("description").trim() : null;
+                String supplied = row.isMapped("category") ? row.get("category").trim()
+                    : row.isMapped("type") ? row.get("type").trim() : "";
+                String category = supplied.isBlank()
+                    ? com.pocketledger.service.TransactionCategorizer.suggest(name, description, amount)
+                    : com.pocketledger.service.TransactionCategorizer.normalize(supplied);
+                if (category == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "CSV row " + row.getRecordNumber() + " has an unsupported category.");
+                if (name.length()>50 || description!=null && description.length()>250)
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"CSV row " + row.getRecordNumber() + " exceeds a field length limit.");
+                transactions.add(new Transaction(user, name, category, amount, date, description));
             }
             return transactions;
         }

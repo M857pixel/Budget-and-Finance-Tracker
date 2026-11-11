@@ -11,8 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // Test the controller with simulated HTTP requests, without connecting to the database.
 // Spring loads only the web layer; no real HTTP server or React browser session runs.
+@org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc(addFilters = false)
 @WebMvcTest(FrontendController.class)
 class FrontendControllerTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.pocketledger.repository.UserRepository users;
     // MockMvc sends requests through Spring's routing, JSON conversion, and validation.
     @Autowired
     private MockMvc mvc;

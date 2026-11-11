@@ -18,12 +18,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // Load AuthController and Spring's web handling without a real server or database.
 // These tests check request validation, controller responses, and session creation.
+@org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc(addFilters = false)
 @WebMvcTest(AuthController.class)
 class AuthControllerTest {
     // Send simulated HTTP requests and inspect their responses and server sessions.
     @Autowired MockMvc mvc;
     // Use controlled substitutes for database access and password hashing.
     // These tests do not verify the real database or the hashing algorithm.
+    @MockitoBean com.pocketledger.service.AccountRecovery recovery;
+    @MockitoBean com.pocketledger.service.AuthRateLimiter limiter;
     @MockitoBean UserRepository users;
     @MockitoBean PasswordHasher passwords;
     // Spaces in the names and mixed-case email let us check input normalization.
@@ -34,7 +37,7 @@ class AuthControllerTest {
 
     // Successful registration should save cleaned account details and start a login session.
     @Test
-    void registrationSavesNamesAndHashAndStartsSession() throws Exception {
+    void registrationSavesNamesAndHashWithoutSession() throws Exception {
         // Arrange: the email is available, and the hashing service returns a known value.
         when(users.findByUserEmailIgnoreCase("sam@example.com")).thenReturn(Optional.empty());
         when(passwords.hash("Strong1!")).thenReturn("hashed-password");
@@ -54,13 +57,12 @@ class AuthControllerTest {
         });
         // Expect HTTP 201 (Created), the saved user ID, no password field in the JSON,
         // and that same user ID in the server session.
-        mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON).content(SIGNUP))
+        mvc.perform(post("/api/register").header("Origin", "http://localhost:5173").contentType(MediaType.APPLICATION_JSON).content(SIGNUP))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userId").value(7))
                 .andExpect(jsonPath("$.created").value(true))
                 .andExpect(jsonPath("$.password").doesNotExist())
-                .andExpect(result -> assertEquals(7L,
-                        result.getRequest().getSession(false).getAttribute("userId")));
+                .andExpect(result -> assertNull(result.getRequest().getSession(false)));
     }
 
     // Logging in with an unknown email returns HTTP 401 (Unauthorized).
@@ -68,7 +70,7 @@ class AuthControllerTest {
     @Test
     void unknownLoginDoesNotCreateAccount() throws Exception {
         when(users.findByUserEmailIgnoreCase("sam@example.com")).thenReturn(Optional.empty());
-        mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/login").header("Origin", "http://localhost:5173").contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"email":"sam@example.com","password":"Strong1!"}
                                 """))
@@ -82,7 +84,7 @@ class AuthControllerTest {
     @Test
     void duplicateRegistrationDoesNotSaveOrLogIn() throws Exception {
         when(users.findByUserEmailIgnoreCase("sam@example.com")).thenReturn(Optional.of(mock(User.class)));
-        mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON).content(SIGNUP))
+        mvc.perform(post("/api/register").header("Origin", "http://localhost:5173").contentType(MediaType.APPLICATION_JSON).content(SIGNUP))
                 .andExpect(status().isConflict())
                 .andExpect(result -> assertNull(result.getRequest().getSession(false)));
         verify(users, never()).saveAndFlush(any());
@@ -94,11 +96,28 @@ class AuthControllerTest {
     @Test
     void registrationRejectsWeakPasswordsBeforeDatabaseAccess() throws Exception {
         for (String password : new String[]{"Ab1!", "lowercase1!", "NoNumber!", "NoSymbol1"}) {
-            mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(post("/api/register").header("Origin", "http://localhost:5173").contentType(MediaType.APPLICATION_JSON)
                             .content(SIGNUP.replace("Strong1!", password)))
                     .andExpect(status().isBadRequest());
         }
         // Validation must reject every example before database access or password hashing.
         verifyNoInteractions(users, passwords);
+    }
+    @Test void deniesUnverifiedLogin() throws Exception {
+        User user = mock(User.class);
+        when(users.findByUserEmailIgnoreCase("sam@example.com")).thenReturn(Optional.of(user));
+        when(passwords.matches("Strong1!", null)).thenReturn(true);
+        mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"email\":\"sam@example.com\",\"password\":\"Strong1!\"}"))
+            .andExpect(status().isForbidden())
+            .andExpect(r -> assertNull(r.getRequest().getSession(false)));
+    }
+    @Test void resendAndForgotUseSameGenericResponseForUnknownEmail() throws Exception {
+        for (String endpoint : new String[]{"resend-verification", "forgot-password"}) {
+            mvc.perform(post("/api/" + endpoint).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"unknown@example.com\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").exists());
+        }
+        verifyNoInteractions(recovery);
     }
 }

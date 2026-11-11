@@ -27,6 +27,31 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
 
 
+    /** Read-only monthly/category aggregates, always scoped to the authenticated owner. */
+    interface AnalysisTotal {
+        Integer getYear();
+        Integer getMonth();
+        String getCategory();
+        java.math.BigDecimal getExpense();
+        java.math.BigDecimal getIncome();
+    }
+
+    @Query("""
+        SELECT year(t.transactionDate) AS year, month(t.transactionDate) AS month,
+               t.transactionType AS category,
+               SUM(CASE WHEN t.transactionAmount < 0 THEN -t.transactionAmount ELSE 0 END) AS expense,
+               SUM(CASE WHEN t.transactionAmount > 0 THEN t.transactionAmount ELSE 0 END) AS income
+        FROM Transaction t
+        WHERE t.user.userId = :owner AND t.transactionDate BETWEEN :start AND :end
+        GROUP BY year(t.transactionDate), month(t.transactionDate), t.transactionType
+        """)
+    List<AnalysisTotal> analysisTotals(@Param("owner") Long owner,
+        @Param("start") java.time.LocalDate start, @Param("end") java.time.LocalDate end);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Transaction t WHERE t.user.userId = :owner AND t.transactionId IN :ids ORDER BY t.transactionId")
+    List<Transaction> lockOwnedCategoryChanges(@Param("owner") Long owner, @Param("ids") List<Long> ids);
+
 }
 
 

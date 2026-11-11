@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // Load the controller and Spring's web request handling, without starting a real
 // HTTP server or connecting to Supabase. These are focused MVC controller tests.
+@org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc(addFilters = false)
 @WebMvcTest(LedgerController.class)
 class LedgerControllerTest {
     // MockMvc sends simulated HTTP requests through Spring and checks the responses.

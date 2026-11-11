@@ -62,6 +62,15 @@ public class User {
         this.balance = balance;
     }
 
+    @Column(nullable = false)
+    private boolean emailVerified = false;
+    @Column(nullable = false)
+    private long sessionVersion = 0;
+    public boolean isEmailVerified() { return emailVerified; }
+    public void verifyEmail() { emailVerified = true; }
+    public long getSessionVersion() { return sessionVersion; }
+    public void resetPassword(String hash) { passwordHash = hash; sessionVersion++; }
+
     //Getters
     public Long getUserId() { return userId; }
     public String getUserEmail() { return userEmail; }

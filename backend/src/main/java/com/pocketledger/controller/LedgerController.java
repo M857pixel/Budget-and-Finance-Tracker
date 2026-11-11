@@ -107,10 +107,7 @@ public class LedgerController {
     @PostMapping("/users")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse createUser(@RequestBody CreateUserRequest request) {
-        User saved = userRepository.save(new User(request.email(), request.passwordHash(),
-                request.firstName(), request.lastName(), request.balance()));
-        return new UserResponse(saved.getUserId(), saved.getUserEmail(), saved.getFirstName(),
-                saved.getLastName(), saved.getBalance());
+        throw new ResponseStatusException(HttpStatus.GONE, "Use /api/register.");
     }
 
     /*
@@ -121,12 +118,7 @@ public class LedgerController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Transactional
     public void deleteUserById(@PathVariable Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-
-        List<Transaction> transactions = transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
-        transactionRepository.deleteAll(transactions);
-        userRepository.delete(user);
+        throw new ResponseStatusException(HttpStatus.GONE, "Account deletion is retired pending a dedicated deletion flow.");
     }
 
     /*
