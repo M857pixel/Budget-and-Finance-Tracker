@@ -242,8 +242,6 @@ public class LedgerController {
 
         transactionRepository.delete(transaction);
     }
-
-
     /*
     Used by each transaction endpoint before database access. AuthController stores
     userId in the server session at login; changing the URL must not grant access

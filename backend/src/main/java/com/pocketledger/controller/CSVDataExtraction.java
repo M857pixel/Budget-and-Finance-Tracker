@@ -209,14 +209,34 @@ class CSVExtractor {
                             "CSV row " + row.getRecordNumber() + " does not match the header columns.\n");
                 }
 
-                // Retrieve the transaction name using the "name" CSV column.
-                // trim() removes leading or trailing spaces.
-                String name = row.get("name").trim();
-                // Transaction name is required.
-                // Reject the row if the name field is empty.
+                // Preserve the full original text in the description field.
+                String originalName = row.get("name").trim();
+                String description = row.isMapped("description") && !row.get("description").isBlank()
+                    ? row.get("description").trim() : originalName;
+
+                // Collapse repeated whitespace for the displayed name.
+                String name = originalName.replaceAll("\\s+", " ");
+
                 if (name.isEmpty()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "CSV row " + row.getRecordNumber() + " has a blank name.\n");
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "CSV record " + row.getRecordNumber() + " has a blank name."
+                    );
+                }
+
+                // Shorten names to 50 characters without splitting Unicode characters.
+                if (name.codePointCount(0, name.length()) > 50) {
+                    name = name.substring(0, name.offsetByCodePoints(0, 50))
+                            .stripTrailing();
+                }
+
+                // Reject descriptions that exceed the database migration's 100-character limit.
+                if (description.codePointCount(0, description.length()) > 100) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "CSV record " + row.getRecordNumber()
+                                    + " has a description longer than 100 characters."
+                    );
                 }
 
                 // Declare the transaction amount.
@@ -237,7 +257,6 @@ class CSVExtractor {
                 // returns the result as a LocalDate.
                 LocalDate date = parseDate(row.get("date").trim(), row.getRecordNumber());
                 // The CSV supplies transaction details; the signed-in user supplies ownership.
-                String description = row.isMapped("description") ? row.get("description").trim() : null;
                 String supplied = row.isMapped("category") ? row.get("category").trim()
                     : row.isMapped("type") ? row.get("type").trim() : "";
                 String category = supplied.isBlank()
@@ -245,8 +264,6 @@ class CSVExtractor {
                     : com.pocketledger.service.TransactionCategorizer.normalize(supplied);
                 if (category == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "CSV row " + row.getRecordNumber() + " has an unsupported category.");
-                if (name.length()>50 || description!=null && description.length()>250)
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"CSV row " + row.getRecordNumber() + " exceeds a field length limit.");
                 transactions.add(new Transaction(user, name, category, amount, date, description));
             }
 

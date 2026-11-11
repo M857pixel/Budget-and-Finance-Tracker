@@ -4,7 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import App from './App'
 
 // Keep the tests focused on the merge boundary: auth, greeting, and main's inline edits.
-vi.mock('./MonthlySummary', () => ({ default: () => <section aria-label="Monthly overview" /> }))
+vi.mock('./MonthlySummary', () => ({ default: ({ refresh }: { refresh: number }) => <section aria-label="Monthly overview"><output aria-label="Summary refresh">{refresh}</output></section> }))
+vi.mock('./CurrencyConverter', () => ({ default: () => <section aria-label="Currency converter" /> }))
 vi.mock('./AssistantChat', () => ({ default: () => <aside aria-label="Assistant" /> }))
 const fetchMock = vi.fn()
 beforeEach(() => {
@@ -42,6 +43,34 @@ describe('main merge integration', () => {
         const patch = fetchMock.mock.calls.find(([url, request]) => url.endsWith('/transactions/10') && request?.method === 'PATCH')
         expect(patch?.[1].credentials).toBe('include')
         expect(JSON.parse(patch?.[1].body)).toEqual({ amount: -8.5 })
+    })
+    it('keeps the currency converter tab together with authenticated dashboard features', async () => {
+        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ userId: 7, email: 'sam@example.com', firstName: 'Sam', lastName: 'Lee' }) })
+        render(<App />)
+        login()
+        await screen.findByText('Hello, Sam Lee')
+        fireEvent.click(screen.getByRole('button', { name: /Currency/ }))
+        expect(screen.getByRole('region', { name: 'Currency converter' })).toBeDefined()
+        expect(screen.getByRole('complementary', { name: 'Assistant' })).toBeDefined()
+    })
+    it('uploads and imports CSV with the same session and refreshes the monthly summary after success', async () => {
+        fetchMock.mockImplementation(async (url: string) => {
+            if (url.endsWith('/api/login')) return { ok: true, json: async () => ({ userId: 7, email: 'sam@example.com', firstName: 'Sam', lastName: 'Lee' }) }
+            if (url.endsWith('/api/import')) return { ok: true }
+            if (url.endsWith('/api/import/transactions')) return { ok: true, json: async () => ({ importedCount: 2 }) }
+            throw new Error('Unexpected request')
+        })
+        render(<App />)
+        login()
+        await screen.findByText('Hello, Sam Lee')
+        fireEvent.click(screen.getByRole('button', { name: /Import/ }))
+        fireEvent.change(screen.getByLabelText('Select a file'), { target: { files: [new File(['name,amount,date\nCoffee,-4,2026-11-01'], 'ledger.csv', { type: 'text/csv' })] } })
+        fireEvent.click(screen.getByRole('button', { name: /Upload/ }))
+        await screen.findByText(/Successfully imported 2 transactions/)
+        expect(screen.getByLabelText('Summary refresh').textContent).toBe('1')
+        const requests = fetchMock.mock.calls.filter(([url]) => url.includes('/api/import'))
+        expect(requests.map(([url]) => url)).toEqual(['http://localhost:8080/api/import', 'http://localhost:8080/api/import/transactions'])
+        expect(requests.every(([, request]) => request.credentials === 'include')).toBe(true)
     })
     it('keeps unverified users out of the dashboard and offers verification recovery', async () => {
         fetchMock.mockResolvedValue({ ok: false, status: 403 })
