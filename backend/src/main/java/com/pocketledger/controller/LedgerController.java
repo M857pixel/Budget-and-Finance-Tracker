@@ -58,7 +58,21 @@
     Mac/Linux:
     curl -X GET "http://localhost:8080/api/users/<userId>/transactions/type/<type>" -b cookies.txt
 
-    6. Update a transaction (PATCH /api/users/{userId}/transactions/{transactionId}):
+    6. Get transactions by month and year (GET /api/users/{userId}/transactions/month?month=YYYY-MM):
+    PowerShell:
+    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/<userId>/transactions/month?month=<YYYY-MM>" -WebSession $session
+
+    Mac/Linux:
+    curl -X GET "http://localhost:8080/api/users/<userId>/transactions/month?month=2026-10" -b cookies.txt
+
+    7. Get transactions by type and month and year (GET /api/users/{userId}/transactions/type/{type}/month?month=YYYY-MM):
+    PowerShell:
+    Invoke-RestMethod -Method Get -Uri "http://localhost:8080/api/users/<userId>/transactions/type/<type>/month?month=<YYYY-MM>" -WebSession $session
+
+    Mac/Linux:
+    curl -X GET "http://localhost:8080/api/users/<userId>/transactions/type/<type>/month?month=2026-10" -b cookies.txt
+
+    8. Update a transaction (PATCH /api/users/{userId}/transactions/{transactionId}):
     Send only fields to update: name, type, amount, date, description.
     PowerShell:
     Invoke-RestMethod -Method Patch -Uri "http://localhost:8080/api/users/<userId>/transactions/<transactionId>" -ContentType "application/json" -Body '{"amount":85.50,"description":"Updated description"}' -WebSession $session
@@ -66,14 +80,14 @@
     Mac/Linux:
     curl -X PATCH "http://localhost:8080/api/users/<userId>/transactions/<transactionId>" -H "Content-Type: application/json" -d '{"amount":85.50,"description":"Updated description"}' -b cookies.txt
 
-    7. Delete a transaction (DELETE /api/users/{userId}/transactions?transactionId={transactionId}):
+    9. Delete a transaction (DELETE /api/users/{userId}/transactions?transactionId={transactionId}):
     PowerShell:
     Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/<userId>/transactions?transactionId=<transactionId>" -WebSession $session
 
     Mac/Linux:
     curl -X DELETE "http://localhost:8080/api/users/<userId>/transactions?transactionId=<transactionId>" -b cookies.txt
 
-    8. Delete a user and their transactions (DELETE /api/users/{userId}):
+    10. Delete a user and their transactions (DELETE /api/users/{userId}):
     PowerShell:
     Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/<userId>"
 
@@ -178,6 +192,57 @@ public class LedgerController {
                 .stream().map(LedgerController::toResponse).toList();
     }
 
+    /*
+    Gets user transactions for the specified month and year.
+    @Return: List<TransactionResponse>
+    */
+    @GetMapping("/users/{userId}/transactions/month")
+    public List<TransactionResponse> getTransactionsByMonthAndYear(@PathVariable Long userId,
+                                                                    @RequestParam java.time.YearMonth month,
+                                                                    HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        return transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId)
+                .stream()
+                .filter(transaction -> java.time.YearMonth.from(transaction.getTransactionDate()).equals(month))
+                .map(LedgerController::toResponse).toList();
+    }
+
+    /*
+    Gets user transactions matching the specified type.
+    @Return: List<TransactionResponse>
+    */
+    @GetMapping("/users/{userId}/transactions/type/{type}")
+    public List<TransactionResponse> getTransactionsByType(@PathVariable Long userId,
+                                                           @PathVariable String type,
+                                                           HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        return transactionRepository
+                .findByUser_UserIdAndTransactionTypeOrderByTransactionDateDesc(userId, type)
+                .stream()
+                .map(LedgerController::toResponse).toList();
+    }
+
+    /*
+    Gets user transactions matching the specified type, month, and year.
+    @Return: List<TransactionResponse>
+    */
+    @GetMapping("/users/{userId}/transactions/type/{type}/month")
+    public List<TransactionResponse> getTransactionsByTypeAndMonthAndYear(@PathVariable Long userId,
+                                                                           @PathVariable String type,
+                                                                           @RequestParam java.time.YearMonth month,
+                                                                           HttpServletRequest httpRequest) {
+        requireUser(userId, httpRequest);
+        return transactionRepository
+                .findByUser_UserIdAndTransactionTypeOrderByTransactionDateDesc(userId, type)
+                .stream()
+                .filter(transaction -> java.time.YearMonth.from(transaction.getTransactionDate()).equals(month))
+                .map(LedgerController::toResponse).toList();
+    }
+
+    /*
+    Gets the total amount of the user's transactions for the specified month and year.
+    @Return: BigDecimal (total transaction amount)
+    */
     @GetMapping("/users/{userId}/transactions/total")
     public BigDecimal getTransactionTotalByMonth(@PathVariable Long userId,
                                                  @RequestParam java.time.YearMonth month,
@@ -188,24 +253,6 @@ public class LedgerController {
                 .filter(transaction -> java.time.YearMonth.from(transaction.getTransactionDate()).equals(month))
                 .map(Transaction::getTransactionAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    /*
-    Categorization Query:
-    Get transactions matching the userId, transaction type, and month
-    @Returns: List<TransactionResponse> (of all the same type and user)
-    */
-    @GetMapping("/users/{userId}/transactions/type/{type}")
-    public List<TransactionResponse> getTransactionsByType(@PathVariable Long userId,
-                                                           @PathVariable String type,
-                                                           @RequestParam java.time.YearMonth month,
-                                                           HttpServletRequest httpRequest) {
-        requireUser(userId, httpRequest);
-        return transactionRepository
-                .findByUser_UserIdAndTransactionTypeOrderByTransactionDateDesc(userId, type)
-                .stream()
-                .filter(transaction -> java.time.YearMonth.from(transaction.getTransactionDate()).equals(month))
-                .map(LedgerController::toResponse).toList();
     }
 
     /*
