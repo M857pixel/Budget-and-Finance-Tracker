@@ -97,6 +97,7 @@
 
 package com.pocketledger.controller;
 
+import com.pocketledger.repository.MonthlyBudgetRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import com.pocketledger.model.Transaction;
 import com.pocketledger.model.User;
@@ -120,9 +121,10 @@ public class LedgerController {
     //Stores the repositories
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
+    private final MonthlyBudgetRepository monthlyBudgetRepository;
 
     //Constructor: Spring supplies the repository objects
-    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository) {
+    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository, MonthlyBudgetRepository monthlyBudgetRepository) {
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
         this.monthlyBudgetRepository = monthlyBudgetRepository;
