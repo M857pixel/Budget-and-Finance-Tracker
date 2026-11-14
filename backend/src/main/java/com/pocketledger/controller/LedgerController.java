@@ -87,7 +87,7 @@
     Mac/Linux:
     curl -X DELETE "http://localhost:8080/api/users/<userId>/transactions?transactionId=<transactionId>" -b cookies.txt
 
-    10. Delete a user and their transactions (DELETE /api/users/{userId}):
+    10. Delete a user, their transactions, and monthly budgets (DELETE /api/users/{userId}):
     PowerShell:
     Invoke-RestMethod -Method Delete -Uri "http://localhost:8080/api/users/<userId>"
 
@@ -100,6 +100,7 @@ package com.pocketledger.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import com.pocketledger.model.Transaction;
 import com.pocketledger.model.User;
+import com.pocketledger.repository.MonthlyBudgetRepository;
 import com.pocketledger.repository.TransactionRepository;
 import com.pocketledger.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -120,11 +121,14 @@ public class LedgerController {
     //Stores the repositories
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
+    private final MonthlyBudgetRepository monthlyBudgetRepository;
 
     //Constructor: Spring supplies the repository objects
-    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository) {
+    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository,
+                            MonthlyBudgetRepository monthlyBudgetRepository) {
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
+        this.monthlyBudgetRepository = monthlyBudgetRepository;
     }
 
     /*
@@ -141,7 +145,7 @@ public class LedgerController {
     }
 
     /*
-    Delete user by ID and all transactions tied to the user by userID
+    Delete user by ID, all transactions, and all monthly budgets tied to the user
     @Return: no object Status: 204, No Content
      */
     @DeleteMapping("/users/{userId}")
@@ -153,6 +157,7 @@ public class LedgerController {
 
         List<Transaction> transactions = transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
         transactionRepository.deleteAll(transactions);
+        monthlyBudgetRepository.deleteAll(monthlyBudgetRepository.findByUser_UserIdOrderByBudgetMonthDesc(userId));
         userRepository.delete(user);
     }
 
