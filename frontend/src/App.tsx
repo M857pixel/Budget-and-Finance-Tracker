@@ -1,7 +1,10 @@
 import './App.css'
+import AccountRecovery from './AccountRecovery'
 import AssistantChat from './AssistantChat'
 import MonthlySummary from './MonthlySummary'
+import TransactionAmount from './TransactionAmount'
 import { useEffect, useState } from 'react'
+import CurrencyConverter from './CurrencyConverter'
 
 // array of selectable transaction types
 const transactionTypes = ['Clothing', 'Entertainment', 'Transport', 'Groceries', 'Salary', 'Rent', 'Other' ]
@@ -24,8 +27,15 @@ const displayDate = (date: string) => {
 }
 
 function App() {
+    const [recovery, setRecovery] = useState(() => window.location.hash.startsWith('#verify=') ? 'verify' : window.location.hash.startsWith('#reset=') ? 'reset' : '')
+    useEffect(() => {
+        const followAuthLink = () => setRecovery(window.location.hash.startsWith('#verify=') ? 'verify' : window.location.hash.startsWith('#reset=') ? 'reset' : '')
+        window.addEventListener('hashchange', followAuthLink)
+        return () => window.removeEventListener('hashchange', followAuthLink)
+    }, [])
     const [isLoggedIn, setIsLoggedIn] = useState(false)
     const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+    const [currentUserName, setCurrentUserName] = useState('')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loginError, setLoginError] = useState('')
@@ -70,17 +80,19 @@ function App() {
                     : { email: email.trim(), password }),
             })
             if (response.ok) {
+                if (isCreatingAccount) { setPassword(''); setRecovery('pending'); return }
                 // keep the user ID for transaction requests
-                const user: { userId: number; email: string } = await response.json()
+                const user: { userId: number; email: string; firstName: string; lastName: string } = await response.json()
                 sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
                 setCurrentUserId(user.userId)
+                setCurrentUserName([user.firstName, user.lastName].filter(Boolean).join(' '))
                 setPassword('')
                 setFirstName('')
                 setLastName('')
                 setAuthScreen('login')
                 setIsLoggedIn(true)
             } else if (response.status === 401 || response.status === 403) {
-                setLoginError('Incorrect email or password.')
+                setLoginError(response.status === 403 ? 'Verify your email before logging in. Use resend verification below.' : 'Incorrect email or password.')
             } else if (response.status === 400) {
                 setLoginError(isCreatingAccount
                     ? 'Check your name, email, and password requirements.'
@@ -109,7 +121,12 @@ function App() {
     const [transactionDescription, setTransactionDescription] = useState('')
     const [isSaving, setIsSaving] = useState(false)
     const [summaryRefresh, setSummaryRefresh] = useState(0)
-    const [activeTab, setActiveTab] = useState<'add' | 'modify' | 'history' | 'import'>('add')
+    useEffect(() => {
+        const refreshCategories = () => setSummaryRefresh(value => value + 1)
+        window.addEventListener('ledger-categories-changed', refreshCategories)
+        return () => window.removeEventListener('ledger-categories-changed', refreshCategories)
+    }, [])
+    const [activeTab, setActiveTab] = useState<'add' | 'currency' | 'history' | 'import'>('add')
 
     // saved transactions and history feedback
     const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -150,7 +167,7 @@ function App() {
         void loadHistory()
         // cancel the request when leaving history or switching users
         return () => controller.abort()
-    }, [activeTab, currentUserId])
+    }, [activeTab, currentUserId, summaryRefresh])
 
     const resetTransaction = () => {
         setAmount('')
@@ -205,32 +222,84 @@ function App() {
     const [uploading, setUploading] = useState(false)
 
     const uploadFile = async () => {
-        if (!selectedFile) return
+        // Require a file and prevent repeated clicks during an import.
+        if (!selectedFile || uploading) return
 
+        // Transactions must belong to a logged-in user.
+        if (currentUserId === null) {
+            setMessage('Please log in before importing transactions.')
+            return
+        }
+
+        // Package the selected file for the upload endpoint.
+        const api = `http://${window.location.hostname}:8080/api`
         const formData = new FormData()
         formData.append('file', selectedFile)
 
         setUploading(true)
-        setMessage('')
-        try {
-            const response = await fetch(
-                `http://${window.location.hostname}:8080/api/import`,
-                {
-                    method: 'POST',
-                    credentials: 'include',
-                    body: formData,
-                },
-            )
+        setMessage('Uploading and validating CSV...')
 
-            if (response.ok) setSummaryRefresh((value) => value + 1)
+        // Track whether saving may have started if the connection fails.
+        let importStarted = false
+
+        try {
+            // Validate and normalize the CSV, then store it in the session.
+            const uploadResponse = await fetch(`${api}/import`, {
+                method: 'POST',
+                credentials: 'include',
+                body: formData,
+            })
+
+            // Display the rejection reason and stop if validation fails.
+            if (!uploadResponse.ok) {
+                const error = await uploadResponse.json().catch(() => null)
+
+                setMessage(
+                    error?.message
+                    ?? error?.detail
+                    ?? `Upload failed (${uploadResponse.status}).`,
+                )
+                return
+            }
+
+            setMessage('Importing transactions...')
+            importStarted = true
+
+            // Extract and save the uploaded rows using the same login session.
+            const importResponse = await fetch(`${api}/import/transactions`, {
+                method: 'POST',
+                credentials: 'include',
+            })
+
+            // Display any errors encountered while extracting or saving rows.
+            if (!importResponse.ok) {
+                const error = await importResponse.json().catch(() => null)
+
+                setMessage(
+                    error?.message
+                    ?? error?.detail
+                    ?? `Transaction import failed (${importResponse.status}).`,
+                )
+                return
+            }
+
+            // Show how many transactions the backend successfully imported.
+            const result: { importedCount: number } =
+                await importResponse.json()
+            setSummaryRefresh((value) => value + 1)
+
             setMessage(
-                response.ok
-                    ? `Uploaded ${selectedFile.name}.`
-                    : `Upload failed (${response.status}).`,
+                `Successfully imported ${result.importedCount} transaction`
+                + `${result.importedCount === 1 ? '' : 's'}. `
+                + 'Open Transaction History to view them.',
             )
         } catch {
-            setMessage('Could not connect to the backend.')
+
+            setMessage(importStarted
+                ? 'Could not confirm the import result. Check Transaction History before retrying.'
+                : 'Could not connect to the backend.')
         } finally {
+            // Re-enable the upload controls after success or failure.
             setUploading(false)
         }
     }
@@ -241,6 +310,8 @@ function App() {
         const text = await response.text()
         setMessage(text)
     }
+
+    if (recovery) return <AccountRecovery mode={recovery} email={email} back={() => { history.replaceState(null, '', window.location.pathname); setRecovery(''); setAuthScreen('login') }} />
 
     if (!isLoggedIn) {
         return (
@@ -285,6 +356,8 @@ function App() {
                     <button type="button" className="auth-secondary" disabled={isLoggingIn} onClick={switchAuthScreen}>
                         {authScreen === 'create' ? 'Back to log in' : 'Create account'}
                     </button>
+                    <button type="button" onClick={() => setRecovery('forgot')}>Forgot password?</button>
+                    <button type="button" onClick={() => setRecovery('pending')}>Resend verification</button>
                     {loginError && <p role="alert">{loginError}</p>}
                 </form>
             </main>
@@ -294,6 +367,7 @@ function App() {
     return (
         <main className="dashboard">
             <h1>PocketLedger</h1>
+            <p>Hello{currentUserName ? `, ${currentUserName}` : ''}</p>
             <button onClick={async () => {
                 // end the session before returning to login
                 try {
@@ -313,6 +387,7 @@ function App() {
                 setTransactions([])
                 setHistoryError('')
                 setCurrentUserId(null)
+                setCurrentUserName('')
                 setIsLoggedIn(false)
                 setEmail('')
                 setPassword('')
@@ -333,10 +408,10 @@ function App() {
                     Add Transaction
                 </button>
                 <button
-                    className={activeTab === 'modify' ? 'active' : ''}
-                    onClick={() => setActiveTab('modify')}
+                    className={activeTab === 'currency' ? 'active' : ''}
+                    onClick={() => setActiveTab('currency')}
                 >
-                    Modify Transaction
+                    Currency Converter
                 </button>
                 <button
                     className={activeTab === 'history' ? 'active' : ''}
@@ -413,7 +488,7 @@ function App() {
                 )}
 
                 {/* placeholders for future functionality*/}
-                {activeTab === 'modify' && <p>Modify Transaction UI goes here.</p>}
+                {activeTab === 'currency' && <CurrencyConverter />}
                 {/* saved transaction history */}
                 {activeTab === 'history' && (
                     <section className="transaction-history">
@@ -432,7 +507,12 @@ function App() {
                                         <tr key={transaction.transactionId}>
                                             <td>{transaction.name}</td>
                                             <td>{transaction.type}</td>
-                                            <td>{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(transaction.amount)}</td>
+                                            <td><TransactionAmount userId={transaction.userId} transactionId={transaction.transactionId}
+                                                amount={transaction.amount} onSaved={(amount) => {
+                                                    setTransactions((current) => current.map((saved) => saved.transactionId === transaction.transactionId
+                                                        ? { ...saved, amount } : saved))
+                                                    setSummaryRefresh((value) => value + 1)
+                                                }} /></td>
                                             <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
                                             <td>{transaction.description || '—'}</td>
                                         </tr>
@@ -444,6 +524,7 @@ function App() {
                 {/* import CSV file */}
                 {activeTab === 'import' && (
                     <section>
+                        <p>Rows without a category are categorized automatically. Uncertain matches stay Other. Optional category or type columns preserve your chosen categories.</p>
                         <label>
                             Select a file
                             <input

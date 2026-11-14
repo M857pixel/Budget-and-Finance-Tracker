@@ -100,7 +100,6 @@ package com.pocketledger.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import com.pocketledger.model.Transaction;
 import com.pocketledger.model.User;
-import com.pocketledger.repository.MonthlyBudgetRepository;
 import com.pocketledger.repository.TransactionRepository;
 import com.pocketledger.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -121,11 +120,9 @@ public class LedgerController {
     //Stores the repositories
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
-    private final MonthlyBudgetRepository monthlyBudgetRepository;
 
     //Constructor: Spring supplies the repository objects
-    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository,
-                            MonthlyBudgetRepository monthlyBudgetRepository) {
+    public LedgerController(UserRepository userRepository, TransactionRepository transactionRepository) {
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
         this.monthlyBudgetRepository = monthlyBudgetRepository;
@@ -145,7 +142,7 @@ public class LedgerController {
     }
 
     /*
-    Delete user by ID, all transactions, and all monthly budgets tied to the user
+    Delete user by ID and all transactions tied to the user by userID
     @Return: no object Status: 204, No Content
      */
     @DeleteMapping("/users/{userId}")
@@ -272,6 +269,12 @@ public class LedgerController {
         Transaction transaction = transactionRepository.findByUser_UserIdAndTransactionId(userId, transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
 
+        BigDecimal amount = request.amount();
+        if (amount != null && (amount.abs().compareTo(new BigDecimal("9999999999.99")) > 0
+                || amount.stripTrailingZeros().scale() > 2)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Enter an amount with at most two decimal places.");
+        }
+
         transaction.updateDetails(
                 request.name(),
                 request.type(),
@@ -296,8 +299,6 @@ public class LedgerController {
 
         transactionRepository.delete(transaction);
     }
-
-
     /*
     Used by each transaction endpoint before database access. AuthController stores
     userId in the server session at login; changing the URL must not grant access

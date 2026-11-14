@@ -80,7 +80,16 @@ In IntelliJ:
 3. Make sure Java 21 and the backend module are selected.
 4. Add an environment variable named `SUPABASE_DB_URL`.
 5. Use the Supabase JDBC Session Pooler connection string as the value.
-6. Apply and save the configuration.
+6. Keep `sslmode=verify-full` in the JDBC URL to verify the database server.
+7. Apply and save the configuration.
+
+The backend bundles the public Supabase CA certificate and automatically supplies
+its file path to the PostgreSQL driver. Existing `sslrootcert` URL parameters are
+replaced at startup, so teammates do not need to download a certificate or match
+a particular working directory. This applies to Supabase database and pooler hosts.
+The certificate is also included in packaged backend JARs.
+
+Keep database credentials in each developer's local environment or run configuration.
 
 Do not commit database passwords, API keys, or other secrets to GitHub.
 
