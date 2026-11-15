@@ -45,16 +45,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
-import java.util.Objects;
+
+import java.time.YearMonth;
+import java.util.*;
 
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.LinkedHashMap;
 
 
 @RestController
@@ -85,10 +82,14 @@ public class AiAssistantController {
 
     public record QueryRequest(String query) {}
     public record AssistantResponse(String action, String result) {}
+    public record ChartPoint(String label, String amount) {}
+    public record AnalysisResponse(String action, String result, String chart,
+                                   String startDate, String endDate, String category,
+                                   List<ChartPoint> data, String total, boolean empty) {}
 
     /** Main endpoint: receives a natural language query, classifies intent, and executes or requests confirmation. */
     @PostMapping("/query")
-    public ResponseEntity<AssistantResponse> query(@RequestBody QueryRequest body, HttpServletRequest request) {
+    public ResponseEntity<?> query(@RequestBody QueryRequest body, HttpServletRequest request) {
         Long userId = requireUserId(request);
 
         if (body == null || body.query() == null || body.query().isBlank()) {
@@ -141,11 +142,20 @@ public class AiAssistantController {
         }
 
         String raw = execute(classification, userId); // 5. Safe read actions execute immediately
-        return ResponseEntity.ok(new AssistantResponse(classification.action(),
-                formatResponse(classification.action(), raw)));
+        String formatted = formatResponse(classification.action(), raw);
+
+        AnalysisResponse analysis = switch (classification.action()) {
+            case "GET_SPENDING_TOTAL"      -> monthlyExpenses(userId, c0(classification), formatted);
+            case "GET_TRANSACTION_SUMMARY" -> spendingByCategory(userId, c0(classification), formatted);
+            default -> null;
+        };
+        if (analysis != null) return ResponseEntity.ok(analysis);
+        return ResponseEntity.ok(new AssistantResponse(classification.action(), formatted));
     }
 
     // Helper methods
+
+    private static Map<String,String> c0(AiActionClassification c) { return c.parameters(); }
 
     /** Parses AI response JSON into a structured action classification object. */
     private AiActionClassification parseAction(String raw) {
@@ -573,6 +583,69 @@ public class AiAssistantController {
         } catch (IllegalArgumentException | CurrencyConversionService.CurrencyConversionException e) {
             return "I couldn't perform that conversion right now.";
         }
+    }
+
+    /** Monthly expense totals; "line" suits longer ranges, otherwise "bar". */
+    private AnalysisResponse monthlyExpenses(Long userId, Map<String, String> p, String formatted) {
+        LocalDate start = AiActionParameters.date(p.get("start_date"), null);
+        LocalDate end   = AiActionParameters.date(p.get("end_date"), null);
+
+        List<Transaction> dated = transactionRepository
+                .findByUser_UserIdOrderByTransactionDateDesc(userId).stream()
+                .filter(t -> t.getTransactionDate() != null && inRange(t, start, end))
+                .toList();
+
+        TreeMap<YearMonth, BigDecimal> byMonth = new TreeMap<>();
+        for (Transaction t : dated) {
+            BigDecimal a = t.getTransactionAmount();
+            if (a != null && a.signum() < 0)
+                byMonth.merge(YearMonth.from(t.getTransactionDate()), a.abs(), BigDecimal::add);
+        }
+        if (byMonth.isEmpty()) return null;
+
+        YearMonth first = start != null ? YearMonth.from(start) : byMonth.firstKey();
+        YearMonth last  = end   != null ? YearMonth.from(end)   : byMonth.lastKey();
+
+        List<ChartPoint> points = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+        for (YearMonth m = first; !m.isAfter(last); m = m.plusMonths(1)) {
+            BigDecimal v = byMonth.getOrDefault(m, BigDecimal.ZERO);
+            total = total.add(v);
+            points.add(new ChartPoint(m.toString(), v.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString()));
+        }
+        String chart = first.until(last, java.time.temporal.ChronoUnit.MONTHS) >= 11 ? "line" : "bar";
+        return new AnalysisResponse("monthly_expenses", formatted, chart,
+                first.atDay(1).toString(), last.atEndOfMonth().toString(), null,
+                List.copyOf(points), total.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString(), false);
+    }
+
+    /** Expense totals per category, largest first; a donut fits a category share. */
+    private AnalysisResponse spendingByCategory(Long userId, Map<String, String> p, String formatted) {
+        LocalDate start = AiActionParameters.date(p.get("start_date"), null);
+        LocalDate end   = AiActionParameters.date(p.get("end_date"), null);
+
+        Map<String, BigDecimal> byCategory = new HashMap<>();
+        transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId).stream()
+                .filter(t -> inRange(t, start, end))
+                .forEach(t -> {
+                    BigDecimal a = t.getTransactionAmount();
+                    if (a != null && a.signum() < 0) {
+                        String type = orDefault(t.getTransactionType(), "Other");
+                        byCategory.merge(type, a.abs(), BigDecimal::add);
+                    }
+                });
+        if (byCategory.isEmpty()) return null;
+
+        List<ChartPoint> points = byCategory.entrySet().stream()
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
+                .map(e -> new ChartPoint(e.getKey(), e.getValue().setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString()))
+                .toList();
+        BigDecimal total = points.stream()
+                .map(pt -> new BigDecimal(pt.amount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new AnalysisResponse("spending_by_category", formatted, "donut",
+                start == null ? null : start.toString(), end == null ? null : end.toString(), null,
+                List.copyOf(points), total.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString(), false);
     }
 }
 

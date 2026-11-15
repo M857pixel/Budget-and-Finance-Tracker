@@ -106,6 +106,9 @@ public class AiAssistantService {
       Case-insensitive substring match against the transaction NAME. "Find my Spotify payments".
     - CONVERT_CURRENCY - required: amount, from_currency, to_currency (If no amount given output a 1)
       Returns converted amount. "50 USD to EUR", "What is 5 dollars in yen?", "usd to peso" Assume USD as the default currency unless otherwise stated.
+    - CHART ROUTING - Requests to visualize data ("chart my spending", "graph expenses", "as a donut") 
+      do not change the action: GET_SPENDING_TOTAL and GET_TRANSACTION_SUMMARY return
+      charts automatically. Never output chart data or labels yourself.
 
     WRITE ACTIONS (the server asks the user to confirm before running; you never confirm)
     - CREATE_TRANSACTION - required: name, type, amount, date. optional: description.
