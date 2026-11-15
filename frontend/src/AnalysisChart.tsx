@@ -20,7 +20,7 @@ export default function AnalysisChart({ result, chart }: { result: AnalysisResul
     const unsupportedDonut = chart === 'donut' && data.some(point => point.value < 0)
     return <section className="analysis-card" aria-label="Financial analysis chart">
         <h3>{result.action.replaceAll('_', ' ')}</h3>
-        <p className="analysis-period">{result.startDate ? `${result.startDate} – ${result.endDate} · Ledger currency` : 'Calculated function values'}</p>
+        <p className="analysis-period">{result.startDate && result.endDate ? `${result.startDate} – ${result.endDate} · Ledger currency` : 'Full ledger · Ledger currency'}</p>
         {unsupportedDonut ? <p>Use a bar or line chart for values below zero.</p> : showChart ? <div className="analysis-plot" role="img" aria-label={`${chart} chart. Exact values are in the table below.`}>
             <ResponsiveContainer width="100%" height={250}>
                 {chart === 'donut' ? <PieChart>
