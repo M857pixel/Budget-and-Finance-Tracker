@@ -76,8 +76,8 @@ public class AiAssistantService {
     You convert one user message into exactly one structured action.
 
     OUTPUT CONTRACT
-    - Reply with ONE JSON object and nothing else. No prose, no markdown, no code fences, no comments.
-    - Shape: {"action":"ACTION_NAME","parameters":{"key":"value"}}
+    - Reply with a JSON ARRAY of action objects, one per distinct request in the user's message.
+      A single request still returns an array with one object. Shape of each element: {"action":"ACTION_NAME","parameters":{"key":"value"}
     - "parameters" is a FLAT object. Every value is a STRING. Never nested objects, arrays, numbers, booleans or null.
     - Omit a key entirely when you have no value for it. Never send empty strings, "null", "unknown" or "?".
     - Use only the action names and parameter names listed below. Never invent new ones.
@@ -90,7 +90,8 @@ public class AiAssistantService {
       "What was my last transaction?", "what did I buy most recently?",
       "show me my latest transaction", "what was the category of my most recent transaction?"
       Use RECENT_TRANSACTIONS_LIST instead whenever the user asks for several.
-      "Show my recent transactions", "my latest activity". Do not promise a specific count.
+    - RECENT_TRANSACTIONS_LIST - optional: count (an integer between 1 and 50, default 5).
+      "Show my last 20 transactions", "what are my 3 most recent purchases?"
     - CURRENT_BALANCE_QUERY - no parameters.
       Month-to-date net position: income minus expenses for the current calendar month.
       "What's my balance?", "how am I doing this month?", "am I up or down this month?"
@@ -103,12 +104,28 @@ public class AiAssistantService {
       "Break down my spending", "where did my money go?", "summary by category".
       Also use this for any spending question scoped to a named category (see LIMITS).
     - SEARCH_TRANSACTIONS_BY_KEYWORD - required: keyword.
-      Case-insensitive substring match against the transaction NAME. "Find my Spotify payments".
+      Case-insensitive substring match against the transaction NAME, falling back to the DESCRIPTION if no name matches. "Find my Spotify payments".
     - CONVERT_CURRENCY - required: amount, from_currency, to_currency (If no amount given output a 1)
       Returns converted amount. "50 USD to EUR", "What is 5 dollars in yen?", "usd to peso" Assume USD as the default currency unless otherwise stated.
     - CHART ROUTING - Requests to visualize data ("chart my spending", "graph expenses", "as a donut") 
       do not change the action: GET_SPENDING_TOTAL and GET_TRANSACTION_SUMMARY return
       charts automatically. Never output chart data or labels yourself.
+    - GET_MONTHLY_BUDGET - optional: month (YYYY-MM, defaults to the current month). "What's my budget for November?", "how much have I budgeted?"
+    - COMPARE_SPENDING - required: start_date_a, end_date_a, start_date_b, end_date_b.
+      Compares total expenses between two periods. "Did I spend more this month than last?","compare my spending this year vs last year".
+    - PROJECT_MONTHLY_SPENDING - optional: months (integer 1-12, how many completed months to average, default 3).
+      Forecasts month-end total spending from the user's current pace, compares it with the monthly budget when one exists, and returns concrete suggestions.
+      "How much will I spend this month?", "will I go over budget?", "project my spending", "can you give me budget advice?".
+      "budget" ALONE means GET_MONTHLY_BUDGET; questions about exceeding, pace, or projections mean PROJECT_MONTHLY_SPENDING.
+    - PROJECT_YEARLY_SPENDING - no parameters. Forecasts total spending for the entire calendar year from the user's year-to-date pace, compared against last year's total.
+      "How much will I spend this year?", "what's my pace for the year?", "how much am I on track to spend in 2026?".
+      Use PROJECT_MONTHLY_SPENDING ONLY when the user asks about the current month or going over the monthly budget.
+      "this year" / "in 2026" ALWAYS means PROJECT_YEARLY_SPENDING, never the monthly projection.
+    - PROJECT_CATEGORY_SPENDING - required: type (one of the seven CATEGORIES).
+      Forecasts the CURRENT MONTH's spending for a single category from its month-to-date pace, compared with that category's recent monthly average.
+      "How much will I spend on groceries this month?", "project my transport spending", "am I on pace to overspend on Entertainment?".
+      Use this whenever the user combines a projection/pace/"on track" word with a category.
+      Use PROJECT_MONTHLY_SPENDING only for all-categories month questions, and PROJECT_YEARLY_SPENDING for year-horizon questions.
 
     WRITE ACTIONS (the server asks the user to confirm before running; you never confirm)
     - CREATE_TRANSACTION - required: name, type, amount, date. optional: description.
@@ -116,7 +133,8 @@ public class AiAssistantService {
       Recategorises EVERY transaction whose name or description matches search_criteria.
     - UPDATE_SINGLE_TRANSACTION - identifier (at least one): keyword, type, date.
       update (at least one): update_name, update_type, amount, update_date, update_description.
-    - DELETE_TRANSACTION - at least one of: keyword, type, date.
+    - DELETE_TRANSACTION - at least one of: keyword, type, date. Optional: match_scope. Set match_scope to "all" only when the user
+      explicitly says "all", "every" or "everything". Otherwise omit it.
 
     CATEGORIES (exact values, capitalised as shown)
     Clothing, Entertainment, Transport, Groceries, Salary, Rent, Other
@@ -165,8 +183,6 @@ public class AiAssistantService {
       tell which single action is meant.
 
     LIMITS AND PRECEDENCE
-    - Exactly one action per message. If several are plausible, pick the one answering the main intent.
-      If two write actions are requested, handle the first; the user can repeat for the second.
     - GET_SPENDING_TOTAL cannot filter by category. For "how much did I spend on groceries last month"
       use GET_TRANSACTION_SUMMARY with the date range, so the category breakdown is included.
     - "balance" means CURRENT_BALANCE_QUERY (month to date, net). "spent" means GET_SPENDING_TOTAL.
@@ -177,17 +193,23 @@ public class AiAssistantService {
       in the order keyword, then type, then date, and ignores the others.
     - If the user names a category as the way to find a transaction ("delete my rent transaction"),
       put it in type, not keyword.
+    - "how much am I on pace to spend this month/year" -> monthly/yearly projection respectively. Never answer a year-pace question with the month projection.
+    - A category named with projection language ("projected/on pace/on track to spend on groceries") -> PROJECT_CATEGORY_SPENDING with type set to that category.
+      A category named with plain total language ("how much did I spend on groceries last month") -> GET_TRANSACTION_SUMMARY, per the rule above.
 
     CONFIRMATION CONTROL (only when a pending action is described in a later system message)
     - CONFIRM_PENDING - the user agrees to run it: "yes", "go ahead", "do it", "confirm", "sure".
     - CANCEL_PENDING - the user refuses, abandons or replaces it: "no", "cancel", "forget it",
       "never mind", "actually, make it...".
-    - AMENDMENT - the user keeps the action but changes a detail. Return the SAME action with the
-      COMPLETE parameter set: every parameter from the pending action, with the change applied.
-      Never drop a parameter that was already established. The server confirms again.
-      Pending CREATE_TRANSACTION name Coffee, type Other, amount -4.50, date 2026-11-04.
-      User: "actually make it 6 dollars" ->
+    - AMENDMENT BEHAVIOUR (this is a rule, NOT an action name):
+      the user keeps the pending action but changes a detail. Return the pending action's own
+      action name with the COMPLETE parameter set: every parameter from the pending action's JSON,
+      with the change applied. Never drop a parameter that was already established.
+      Example: pending action is CREATE_TRANSACTION (name Coffee, type Other, amount -4.50,
+      date 2026-11-04). User: "actually make it 6 dollars" ->
       {"action":"CREATE_TRANSACTION","parameters":{"name":"Coffee","type":"Other","amount":"-6.00","date":"2026-11-04"}}
+      Note: only type, new_type and update_type use the standard categories. When the user changes
+      the category, overwrite that parameter (e.g. "put it in groceries" -> "type":"Groceries").
     - If the pending action is marked as awaiting a missing detail, a message that supplies that detail
       is an AMENDMENT, never CONFIRM_PENDING. Re-emit the action with the full parameter set.
     - If the message is a new, unrelated request, ignore the pending action and classify normally.
@@ -262,13 +284,13 @@ public class AiAssistantService {
         ArrayNode messages = root.putArray("messages");
         messages.addObject().put("role", "system").put("content", SYSTEM_PROMPT);
 
-        if (pendingDescription != null && !pendingDescription.isBlank()) {
-            messages.addObject().put("role", "system").put("content",
-                    "An action is currently awaiting the user's confirmation: " + pendingDescription
-                            + "\nIf the user's message agrees to it, return {\"action\":\"CONFIRM_PENDING\"}."
-                            + "\nIf the user's message declines or cancels it, return {\"action\":\"CANCEL_PENDING\"}."
-                            + "\nIf the user's message is a new unrelated request, classify it normally.");
-        }
+        messages.addObject().put("role", "system").put("content",
+                "This action is currently awaiting the user's confirmation (JSON): " + pendingDescription
+                        + "\nIf the user agrees to it, return [{\"action\":\"CONFIRM_PENDING\",\"parameters\":{}}]."
+                        + "\nIf the user declines or cancels it, return [{\"action\":\"CANCEL_PENDING\",\"parameters\":{}}]."
+                        + "\nIf the user changes a detail, return the SAME action with the full parameter set above,"
+                        + " the change applied. Never output AMENDMENT as an action name."
+                        + "\nIf the message is a new unrelated request, classify it normally as an array.");
 
         messages.addObject().put("role", "system").put("content",
                 "Today's date is " + LocalDate.now() + ". "
@@ -277,6 +299,7 @@ public class AiAssistantService {
                         + "Never supply a date from memory or training data.");
 
         messages.addObject().put("role", "user").put("content", userQuery);
+
 
         return mapper.writeValueAsString(root);
     }

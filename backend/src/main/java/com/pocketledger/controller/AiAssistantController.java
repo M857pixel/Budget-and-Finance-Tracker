@@ -34,6 +34,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pocketledger.model.Transaction;
 import com.pocketledger.repository.TransactionRepository;
+import com.pocketledger.repository.MonthlyBudgetRepository;
+import com.pocketledger.model.MonthlyBudget;
 import com.pocketledger.repository.UserRepository;
 import com.pocketledger.service.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -52,6 +54,7 @@ import java.util.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Locale;
 
 
 @RestController
@@ -66,18 +69,20 @@ public class AiAssistantController {
     private final AiOrchestratorService aiOrchestratorService;
     private final AiPendingActionStore aiPendingActionStore;
     private final CurrencyConversionService currencyConversionService;
-
+    private final MonthlyBudgetRepository monthlyBudgetRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Initializes all dependencies for handling assistant requests. */
     public AiAssistantController(TransactionRepository transactionRepository, AiAssistantService aiAssistantService, UserRepository userRepository,
-                                 AiOrchestratorService aiOrchestratorService, AiPendingActionStore aiPendingActionStore, CurrencyConversionService currencyConversionService) {
+                                 AiOrchestratorService aiOrchestratorService, AiPendingActionStore aiPendingActionStore,
+                                 CurrencyConversionService currencyConversionService, MonthlyBudgetRepository monthlyBudgetRepository) {
         this.transactionRepository = transactionRepository;
         this.aiAssistantService = aiAssistantService;
         this.userRepository = userRepository;
         this.aiOrchestratorService = aiOrchestratorService;
         this.aiPendingActionStore = aiPendingActionStore;
         this.currencyConversionService = currencyConversionService;
+        this.monthlyBudgetRepository = monthlyBudgetRepository;
     }
 
     public record QueryRequest(String query) {}
@@ -106,51 +111,62 @@ public class AiAssistantController {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "The assistant is unavailable right now.", e);
         }
-        AiActionClassification classification = parseAction(actionJson);
+        List<AiActionClassification> actions = parseActions(actionJson);
+        StringBuilder reply = new StringBuilder();
 
-        switch (classification.action()) { // 3. Confirmation control flow — handled BEFORE any routing
-            case "CONFIRM_PENDING" -> {
-                AiActionClassification toRun = aiPendingActionStore.consume(userId).orElse(null);
-                if (toRun == null) {
-                    return ResponseEntity.ok(new AssistantResponse("NONE",
-                            "There's nothing waiting for confirmation right now."));
+        for (AiActionClassification classification : actions) {
+            switch (classification.action()) {
+                case "CONFIRM_PENDING" -> {
+                    AiActionClassification toRun = aiPendingActionStore.consume(userId).orElse(null);
+                    if (toRun == null) {
+                        return ResponseEntity.ok(new AssistantResponse("NONE",
+                                "There's nothing waiting for confirmation right now."));
+                    }
+                    String problem = validate(toRun);           // re-check amended actions
+                    if (problem != null) {
+                        aiPendingActionStore.put(userId, toRun); // stay pending until the detail arrives
+                        return ResponseEntity.ok(new AssistantResponse("CLARIFICATION_REQUIRED", problem));
+                    }
+                    return ResponseEntity.ok(new AssistantResponse(toRun.action(),
+                            formatResponse(toRun.action(), execute(toRun, userId))));
                 }
-                String raw = execute(toRun, userId);
-                return ResponseEntity.ok(new AssistantResponse(toRun.action(),
-                        formatResponse(toRun.action(), raw)));
+                case "CANCEL_PENDING" -> {
+                    aiPendingActionStore.clear(userId);
+                    return ResponseEntity.ok(new AssistantResponse("CANCEL_PENDING",
+                            "No problem — I've cancelled that."));
+                }
+                case "NONE" -> {
+                    return ResponseEntity.ok(new AssistantResponse("NONE",
+                            "I can only help with questions about your own transactions."));
+                }
+                default -> {
+                    if (WRITE_ACTIONS.contains(classification.action())) {
+                        String problem = validate(classification);
+                        if (problem != null) {
+                            aiPendingActionStore.put(userId, classification); // keep awaiting the detail
+                            return ResponseEntity.ok(new AssistantResponse("CLARIFICATION_REQUIRED", problem));
+                        }
+                        aiPendingActionStore.put(userId, classification);
+                        return ResponseEntity.ok(new AssistantResponse("CONFIRMATION_REQUIRED",
+                                describe(classification) + " Shall I go ahead?"));
+                    }
+                    String formatted = formatResponse(classification.action(),
+                            execute(classification, userId));
+                    AnalysisResponse analysis = switch (classification.action()) {
+                        case "GET_SPENDING_TOTAL"       -> monthlyExpenses(userId, classification.parameters(), formatted);
+                        case "GET_TRANSACTION_SUMMARY"  -> spendingByCategory(userId, classification.parameters(), formatted);
+                        case "PROJECT_MONTHLY_SPENDING" -> projectionChart(userId, classification.parameters(), formatted);
+                        case "PROJECT_YEARLY_SPENDING" -> yearlyProjectionChart(userId, formatted);
+                        case "PROJECT_CATEGORY_SPENDING" -> categoryProjectionChart(userId, classification.parameters(), formatted);
+                        default -> null;
+                    };
+                    if (analysis != null) return ResponseEntity.ok(analysis);
+                    reply.append(formatted).append('\n');
+                }
             }
-            case "CANCEL_PENDING" -> {
-                aiPendingActionStore.clear(userId);
-                return ResponseEntity.ok(new AssistantResponse("CANCEL_PENDING",
-                        "No problem — I've cancelled that."));
-            }
-            case "NONE" -> {
-                return ResponseEntity.ok(new AssistantResponse("NONE",
-                        "I can only help with questions about your own transactions."));
-            }
-            default -> { /* fall through to normal handling */ }
         }
-
-        if (WRITE_ACTIONS.contains(classification.action())) { // 4. Write actions must be confirmed first — stashes them, doesn't execute
-            String problem = validate(classification);
-            if (problem != null) {
-                return ResponseEntity.ok(new AssistantResponse("CLARIFICATION_REQUIRED", problem));
-            }
-            aiPendingActionStore.put(userId, classification);
-            return ResponseEntity.ok(new AssistantResponse("CONFIRMATION_REQUIRED",
-                    describe(classification) + " Shall I go ahead?"));
-        }
-
-        String raw = execute(classification, userId); // 5. Safe read actions execute immediately
-        String formatted = formatResponse(classification.action(), raw);
-
-        AnalysisResponse analysis = switch (classification.action()) {
-            case "GET_SPENDING_TOTAL"      -> monthlyExpenses(userId, c0(classification), formatted);
-            case "GET_TRANSACTION_SUMMARY" -> spendingByCategory(userId, c0(classification), formatted);
-            default -> null;
-        };
-        if (analysis != null) return ResponseEntity.ok(analysis);
-        return ResponseEntity.ok(new AssistantResponse(classification.action(), formatted));
+        return ResponseEntity.ok(new AssistantResponse(
+                actions.size() > 1 ? "MULTI" : actions.get(0).action(), reply.toString().trim()));
     }
 
     // Helper methods
@@ -158,27 +174,31 @@ public class AiAssistantController {
     private static Map<String,String> c0(AiActionClassification c) { return c.parameters(); }
 
     /** Parses AI response JSON into a structured action classification object. */
-    private AiActionClassification parseAction(String raw) {
+    private static final int MAX_ACTIONS_PER_MESSAGE = 5;
+
+    private List<AiActionClassification> parseActions(String raw) {
         try {
             JsonNode root = objectMapper.readTree(raw);
-            String action = root.path("action").asText("").trim().toUpperCase();
-            if (action.isEmpty()) {
-                return new AiActionClassification("NONE", new HashMap<>());
+            JsonNode items = root.isArray() ? root : objectMapper.createArrayNode().add(root);
+            List<AiActionClassification> out = new ArrayList<>();
+            for (JsonNode item : items) {
+                if (!item.isObject()) continue;
+                String action = item.path("action").asText("").trim().toUpperCase();
+                if (action.isEmpty()) continue;
+                Map<String, String> params = new HashMap<>();
+                JsonNode ps = item.path("parameters");
+                if (ps.isObject()) {
+                    ps.fieldNames().forEachRemaining(k -> params.put(k, ps.get(k).asText()));
+                }
+                out.add(new AiActionClassification(action, params));
+                if (out.size() == MAX_ACTIONS_PER_MESSAGE) break;
             }
-            Map<String, String> parameters = new HashMap<>();
-            JsonNode params = root.path("parameters");
-            if (params.isObject()) {
-                params.fieldNames().forEachRemaining(key ->
-                        parameters.put(key, params.get(key).asText()));
-            }
-            return new AiActionClassification(action, parameters);
+            return out.isEmpty() ? List.of(new AiActionClassification("NONE", new HashMap<>())) : out;
         } catch (Exception e) {
-            // Not JSON — treat as bare action name
             String action = raw == null ? "NONE" : raw.trim().toUpperCase();
-            return new AiActionClassification(action, new HashMap<>());
+            return List.of(new AiActionClassification(action, new HashMap<>()));
         }
     }
-
     /** Validates that a classified action has all required parameters before storing or executing. */
     private String validate(AiActionClassification c) {
         Map<String, String> p = c.parameters();
@@ -327,7 +347,6 @@ public class AiAssistantController {
 
                 yield "I'll update the transaction matching " + ident + ", changing " + changes + ".";
             }
-
             default -> "I'll carry out " + c.action() + ".";
         };
     }
@@ -346,8 +365,13 @@ public class AiAssistantController {
             case "GET_TRANSACTION_SUMMARY" -> getTransactionSummary(userId, c.parameters());
             case "GET_SPENDING_TOTAL" -> spendingTotal(userId, c.parameters());
             case "CURRENT_BALANCE_QUERY" -> currentBalanceQuery(userId);
-            case "RECENT_TRANSACTIONS_LIST" -> recentTransactionsList(userId, 5);
+            case "RECENT_TRANSACTIONS_LIST" -> recentTransactionsList(userId, parseCount(c.parameters()));
             case "CONVERT_CURRENCY" -> convertCurrency(c.parameters());
+            case "GET_MONTHLY_BUDGET" -> monthlyBudget(userId, c.parameters());
+            case "COMPARE_SPENDING" -> compareSpending(userId, c.parameters());
+            case "PROJECT_MONTHLY_SPENDING" -> spendProjection(userId, c.parameters());
+            case "PROJECT_YEARLY_SPENDING" -> yearlyProjection(userId);
+            case "PROJECT_CATEGORY_SPENDING" -> categoryProjection(userId, c.parameters());
             default -> "Unknown action: " + c.action();
         };
     }
@@ -381,6 +405,38 @@ public class AiAssistantController {
         if (count == 0) return "You haven't recorded any spending" + period + ".";
         return String.format("You've spent $%.2f%s across %d transaction%s.",
                 spent, period, count, count == 1 ? "" : "s");
+    }
+
+    private record SpendingSummary(BigDecimal spent, long count) {}
+
+    private SpendingSummary summarizeSpending(Long userId, LocalDate start, LocalDate end) {
+        List<Transaction> txns = transactionRepository
+                .findByUser_UserIdOrderByTransactionDateDesc(userId).stream()
+                .filter(t -> inRange(t, start, end)).toList();
+        BigDecimal spent = txns.stream().map(Transaction::getTransactionAmount)
+                .filter(a -> a != null && a.signum() < 0).map(BigDecimal::abs)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long count = txns.stream().filter(t -> t.getTransactionAmount() != null
+                && t.getTransactionAmount().signum() < 0).count();
+        return new SpendingSummary(spent, count);
+    }
+
+    private String compareSpending(Long userId, Map<String, String> p) {
+        LocalDate aStart = AiActionParameters.date(p.get("start_date_a"), null);
+        LocalDate aEnd   = AiActionParameters.date(p.get("end_date_a"), null);
+        LocalDate bStart = AiActionParameters.date(p.get("start_date_b"), null);
+        LocalDate bEnd   = AiActionParameters.date(p.get("end_date_b"), null);
+        SpendingSummary a = summarizeSpending(userId, aStart, aEnd);
+        SpendingSummary b = summarizeSpending(userId, bStart, bEnd);
+        BigDecimal diff = a.spent().subtract(b.spent());
+        String comparison = diff.signum() > 0 ? "more" : diff.signum() < 0 ? "less" : "the same as";
+        if (diff.signum() == 0) {
+            return String.format("You spent the same, $%.2f, in both periods (%s to %s and %s to %s).",
+                    a.spent(), aStart, aEnd, bStart, bEnd);
+        }
+        String word = diff.signum() > 0 ? "more" : "less";
+        return String.format("You spent $%s %s between %s and %s than between %s and %s ($%.2f vs $%.2f).",
+                diff.abs().toPlainString(), word, aStart, aEnd, bStart, bEnd, a.spent(), b.spent());
     }
 
     /** Returns a human-readable description of a date period (e.g., "since 2026-11-01"). */
@@ -585,6 +641,16 @@ public class AiAssistantController {
         }
     }
 
+    private static int parseCount(Map<String, String> p) {
+        String raw = p.get("count");
+        if (raw == null) return 5;
+        try {
+            return Math.max(1, Math.min(50, Integer.parseInt(raw.trim())));
+        } catch (NumberFormatException e) {
+            return 5;
+        }
+    }
+
     /** Monthly expense totals; "line" suits longer ranges, otherwise "bar". */
     private AnalysisResponse monthlyExpenses(Long userId, Map<String, String> p, String formatted) {
         LocalDate start = AiActionParameters.date(p.get("start_date"), null);
@@ -646,6 +712,408 @@ public class AiAssistantController {
         return new AnalysisResponse("spending_by_category", formatted, "donut",
                 start == null ? null : start.toString(), end == null ? null : end.toString(), null,
                 List.copyOf(points), total.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString(), false);
+    }
+
+    /** Looks up the user's monthly budget for an optional "month" parameter (YYYY-MM). */
+    private String monthlyBudget(Long userId, Map<String, String> p) {
+        YearMonth month = parseMonth(p.get("month"));
+        return monthlyBudgetRepository.findByUser_UserIdAndBudgetMonth(userId, month.atDay(1))
+                .map(b -> String.format("Your budget for %s is %s.", month, money(b.getBudgetAmount())))
+                .orElse("You haven't set a budget for " + month + ".");
+    }
+
+    /** Parses a YYYY-MM month string, defaulting to the current month when absent. */
+    private static YearMonth parseMonth(String raw) {
+        if (raw == null || raw.isBlank()) return YearMonth.now();
+        try {
+            return YearMonth.parse(raw.trim());
+        } catch (Exception e) {
+            return YearMonth.now();
+        }
+    }
+
+    /** Clamps the lookback window to 1-12 completed months (default 3). */
+    private static int parseMonths(String raw) {
+        if (raw == null) return 3;
+        try {
+            return Math.max(1, Math.min(12, Integer.parseInt(raw.trim())));
+        } catch (NumberFormatException e) {
+            return 3;
+        }
+    }
+
+    /** Sums absolute expense amounts (negative values only) within a date range. */
+    private BigDecimal expenseTotal(List<Transaction> txns, LocalDate start, LocalDate end) {
+        return txns.stream()
+                .filter(t -> inRange(t, start, end))
+                .map(Transaction::getTransactionAmount)
+                .filter(a -> a != null && a.signum() < 0)
+                .map(BigDecimal::abs)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** Everything the projection text and chart both need, computed once. */
+    private record ProjectionSnapshot(YearMonth current, BigDecimal monthToDate, int months,
+                                      BigDecimal projectedTotal, BigDecimal historyAvg,
+                                      BigDecimal budget, List<ChartPoint> monthlyPoints) {}
+
+    /** Builds the pace forecast, budget lookup, and history points for the projection. */
+    private ProjectionSnapshot computeProjection(Long userId, Map<String, String> p) {
+        int lookback = parseMonths(p.get("months"));
+        YearMonth current = YearMonth.now();
+        LocalDate today = LocalDate.now();
+        List<Transaction> txns = transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
+
+        // Completed-month history totals (also become the chart's bars)
+        List<ChartPoint> points = new ArrayList<>();
+        BigDecimal historySum = BigDecimal.ZERO;
+        int monthsWithData = 0;
+        for (int i = lookback; i >= 1; i--) {
+            YearMonth m = current.minusMonths(i);
+            BigDecimal total = expenseTotal(txns, m.atDay(1), m.atEndOfMonth());
+            if (total.signum() > 0) { historySum = historySum.add(total); monthsWithData++; }
+            points.add(new ChartPoint(m.toString(),
+                    total.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString()));
+        }
+
+        // Pace extrapolation for the current month
+        BigDecimal monthToDate = expenseTotal(txns, current.atDay(1), today);
+        int daysElapsed = today.getDayOfMonth();
+        int daysInMonth = current.lengthOfMonth();
+        BigDecimal dailyRate = daysElapsed == 0 ? BigDecimal.ZERO
+                : monthToDate.divide(BigDecimal.valueOf(daysElapsed), 4, java.math.RoundingMode.HALF_EVEN);
+        BigDecimal projectedTotal = monthToDate
+                .add(dailyRate.multiply(BigDecimal.valueOf(daysInMonth - daysElapsed)))
+                .setScale(2, java.math.RoundingMode.HALF_EVEN);
+        points.add(new ChartPoint(current + " (proj.)", projectedTotal.toPlainString()));
+
+        BigDecimal historyAvg = monthsWithData == 0 ? BigDecimal.ZERO
+                : historySum.divide(BigDecimal.valueOf(monthsWithData), 2, java.math.RoundingMode.HALF_EVEN);
+
+        BigDecimal budget = monthlyBudgetRepository
+                .findByUser_UserIdAndBudgetMonth(userId, current.atDay(1))
+                .map(MonthlyBudget::getBudgetAmount)
+                .orElse(null);
+
+        return new ProjectionSnapshot(current, monthToDate, lookback, projectedTotal,
+                historyAvg, budget, List.copyOf(points));
+    }
+
+    /** Largest month-to-date expense category, used for the trimming suggestion. */
+    private Map.Entry<String, BigDecimal> topExpenseCategory(Long userId, LocalDate start, LocalDate end) {
+        Map<String, BigDecimal> byCategory = new HashMap<>();
+        transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId).stream()
+                .filter(t -> inRange(t, start, end))
+                .forEach(t -> {
+                    BigDecimal a = t.getTransactionAmount();
+                    if (a != null && a.signum() < 0) {
+                        byCategory.merge(orDefault(t.getTransactionType(), "Other"), a.abs(), BigDecimal::add);
+                    }
+                });
+        return byCategory.entrySet().stream().max(Map.Entry.comparingByValue()).orElse(null);
+    }
+
+    /** Read handler: forecast text plus budget-aware suggestions. */
+    private String spendProjection(Long userId, Map<String, String> p) {
+        ProjectionSnapshot s = computeProjection(userId, p);
+        if (s.monthToDate().signum() == 0 && s.historyAvg().signum() == 0) {
+            return "You haven't recorded any spending yet, so there's nothing to project.";
+        }
+
+        LocalDate today = LocalDate.now();
+        int daysRemaining = s.current().lengthOfMonth() - today.getDayOfMonth();
+
+        StringBuilder out = new StringBuilder(String.format(
+                "Month-to-date you've spent $%.2f. At this pace you're projected to end %s at $%.2f.",
+                s.monthToDate(), s.current(), s.projectedTotal()));
+
+        if (s.historyAvg().signum() > 0) {
+            BigDecimal diff = s.projectedTotal().subtract(s.historyAvg());
+            String word = diff.signum() > 0 ? "above" : diff.signum() < 0 ? "below" : "in line with";
+            out.append(String.format(" That's %s your %d-month average ($%.2f).",
+                    word, s.months(), s.historyAvg()));
+        }
+
+        out.append("\n\nSuggestions:");
+
+        if (s.budget() != null) {
+            BigDecimal over = s.projectedTotal().subtract(s.budget());
+            if (over.signum() > 0) {
+                out.append(String.format("%n- You're on pace to exceed your $%.2f budget by $%.2f.",
+                        s.budget(), over));
+                Map.Entry<String, BigDecimal> top =
+                        topExpenseCategory(userId, s.current().atDay(1), today);
+                if (top != null) {
+                    out.append(String.format(
+                            " Trimming \"%s\" (your largest category, $%.2f so far) by ~20%% would close about $%.2f of the gap.",
+                            top.getKey(), top.getValue(),
+                            top.getValue().multiply(new BigDecimal("0.20")).setScale(2, java.math.RoundingMode.HALF_EVEN)));
+                }
+            } else {
+                out.append(String.format(
+                        "%n- You're on pace to finish $%.2f under your $%.2f budget — consider moving the surplus to savings.",
+                        over.abs(), s.budget()));
+            }
+            BigDecimal allowance = s.budget().subtract(s.monthToDate());
+            if (daysRemaining > 0 && allowance.signum() > 0) {
+                out.append(String.format(
+                        "%n- To stay in budget, keep remaining daily spending at or below $%.2f for the next %d day%s.",
+                        allowance.divide(BigDecimal.valueOf(daysRemaining), 2, java.math.RoundingMode.HALF_EVEN),
+                        daysRemaining, daysRemaining == 1 ? "" : "s"));
+            }
+        } else {
+            BigDecimal suggested = s.projectedTotal().signum() > 0 ? s.projectedTotal() : s.historyAvg();
+            out.append(String.format(
+                    "%n- You haven't set a budget for %s. Based on your pace, one near $%.0f would be realistic.",
+                    s.current(), suggested.setScale(-2, java.math.RoundingMode.HALF_UP)));
+        }
+        return out.toString();
+    }
+
+    /** Bar chart: recent completed months plus the projected total for the current month. */
+    private AnalysisResponse projectionChart(Long userId, Map<String, String> p, String formatted) {
+        ProjectionSnapshot s = computeProjection(userId, p);
+        if (s.monthToDate().signum() == 0 && s.historyAvg().signum() == 0) return null;
+        return new AnalysisResponse("spending_projection", formatted, "bar",
+                s.current().minusMonths(s.months()).atDay(1).toString(),
+                s.current().atEndOfMonth().toString(), null,
+                s.monthlyPoints(), s.projectedTotal().toPlainString(), false);
+    }
+
+    private record YearProjection(int year, BigDecimal yearToDate, BigDecimal projectedTotal,
+                                  BigDecimal lastYearTotal, boolean lowConfidence) {}
+
+    private YearProjection computeYearProjection(Long userId) {
+        YearMonth current = YearMonth.now();
+        LocalDate today = LocalDate.now();
+        List<Transaction> txns =
+                transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
+
+        int year = today.getYear();
+        LocalDate yearStart = LocalDate.of(year, 1, 1);
+        BigDecimal ytd = expenseTotal(txns, yearStart, today);
+
+        int daysElapsed = today.getDayOfYear();
+        int daysInYear = today.lengthOfYear();
+        BigDecimal dailyRate = ytd.divide(BigDecimal.valueOf(daysElapsed), 4,
+                java.math.RoundingMode.HALF_EVEN);
+        BigDecimal projected = ytd.add(dailyRate.multiply(
+                        BigDecimal.valueOf(daysInYear - daysElapsed)))
+                .setScale(2, java.math.RoundingMode.HALF_EVEN);
+
+        BigDecimal lastYear = expenseTotal(txns, LocalDate.of(year - 1, 1, 1),
+                LocalDate.of(year - 1, 12, 31));
+
+        // January forecasts swing wildly on a few days of data — flag that
+        return new YearProjection(year, ytd, projected, lastYear, daysElapsed < 7);
+    }
+
+    private String yearlyProjection(Long userId) {
+        YearProjection y = computeYearProjection(userId);
+        if (y.yearToDate().signum() == 0 && y.lastYearTotal().signum() == 0) {
+            return "You haven't recorded any spending this year or last, so there's nothing to project.";
+        }
+
+        StringBuilder out = new StringBuilder(String.format(
+                "Year-to-date you've spent $%.2f. At this pace you're projected to spend $%.2f in all of %d.",
+                y.yearToDate(), y.projectedTotal(), y.year()));
+
+        if (y.lowConfidence()) {
+            out.append("\n(Note: it's very early in the year, so this forecast is low-confidence.)");
+        }
+
+        if (y.lastYearTotal().signum() > 0) {
+            BigDecimal diff = y.projectedTotal().subtract(y.lastYearTotal());
+            String word = diff.signum() > 0 ? "above" : diff.signum() < 0 ? "below" : "equal to";
+            out.append(String.format(" That's %s last year's total of $%.2f.",
+                    word.equals("equal to") ? "exactly" : word, y.lastYearTotal()));
+        }
+
+        out.append("\n\nSuggestions:");
+        monthlyBudgetRepository.findByUser_UserIdAndBudgetMonth(userId, LocalDate.now())
+                .map(MonthlyBudget::getBudgetAmount)
+                .ifPresentOrElse(
+                        b -> out.append(String.format(
+                                "%n- Twelve months at your current pace costs $%.2f — that's %s your $%.2f monthly budget annualized ($%.2f).",
+                                y.projectedTotal(),
+                                y.projectedTotal().compareTo(b.multiply(BigDecimal.valueOf(12))) > 0
+                                        ? "over" : "under",
+                                b, b.multiply(BigDecimal.valueOf(12)))),
+                        () -> out.append(String.format(
+                                "%n- No monthly budget is set. At your pace, one around $%.0f/month (≈ $%.0f/year) would match reality.",
+                                y.projectedTotal().divide(BigDecimal.valueOf(12), 0, java.math.RoundingMode.HALF_UP),
+                                y.projectedTotal())));
+
+        YearMonth biggest = null;
+        BigDecimal biggestAmt = BigDecimal.ZERO;
+        LocalDate jan1 = LocalDate.of(y.year(), 1, 1);
+        List<Transaction> txns =
+                transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
+        for (LocalDate d = jan1; !d.isAfter(LocalDate.now()); d = d.plusMonths(1)) {
+            BigDecimal amt = expenseTotal(txns, d, d.plusMonths(1).minusDays(1));
+            if (amt.compareTo(biggestAmt) > 0) { biggestAmt = amt; biggest = YearMonth.from(d); }
+        }
+        if (biggest != null) {
+            out.append(String.format(
+                    "%n- Your heaviest month so far was %s at $%.2f; flattening that peak is where trimming helps most.",
+                    biggest, biggestAmt));
+        }
+        return out.toString();
+    }
+
+    /** Monthly actuals for the calendar year, plus one projected-total bar. */
+    private AnalysisResponse yearlyProjectionChart(Long userId, String formatted) {
+        YearProjection y = computeYearProjection(userId);
+        if (y.yearToDate().signum() == 0 && y.lastYearTotal().signum() == 0) return null;
+
+        List<Transaction> txns =
+                transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
+        List<ChartPoint> points = new ArrayList<>();
+        for (LocalDate m = LocalDate.of(y.year(), 1, 1); !m.isAfter(LocalDate.now()); m = m.plusMonths(1)) {
+            points.add(new ChartPoint(YearMonth.from(m).toString(),
+                    expenseTotal(txns, m, m.plusMonths(1).minusDays(1))
+                            .setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString()));
+        }
+        points.add(new ChartPoint(y.year() + " total (proj.)", y.projectedTotal().toPlainString()));
+        return new AnalysisResponse("yearly_spending_projection", formatted, "bar",
+                y.year() + "-01-01", y.year() + "-12-31", null,
+                List.copyOf(points), y.projectedTotal().toPlainString(), false);
+    }
+
+    private String categoryProjection(Long userId, Map<String, String> p) {
+        String rawType = p.get("type");
+        String category = AiOrchestratorService.VALID_CATEGORIES.stream()
+                .filter(v -> v.equalsIgnoreCase(rawType))
+                .findFirst()
+                .orElse(null);
+        if (category == null) {
+            return "Which category should I project? I can project Clothing, Entertainment, "
+                    + "Transport, Groceries, Salary, Rent, or Other.";
+        }
+
+        YearMonth current = YearMonth.now();
+        LocalDate today = LocalDate.now();
+        List<Transaction> txns =
+                transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
+
+        // Month-to-date spend in this category
+        BigDecimal monthToDate = txns.stream()
+                .filter(t -> category.equals(t.getTransactionType())
+                        && inRange(t, current.atDay(1), today))
+                .map(Transaction::getTransactionAmount)
+                .filter(a -> a != null && a.signum() < 0)
+                .map(BigDecimal::abs)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Average monthly spend in this category over the last 3 completed months
+        BigDecimal historySum = BigDecimal.ZERO;
+        int monthsWithData = 0;
+        for (int i = 1; i <= 3; i++) {
+            YearMonth m = current.minusMonths(i);
+            BigDecimal total = txns.stream()
+                    .filter(t -> category.equals(t.getTransactionType())
+                            && inRange(t, m.atDay(1), m.atEndOfMonth()))
+                    .map(Transaction::getTransactionAmount)
+                    .filter(a -> a != null && a.signum() < 0)
+                    .map(BigDecimal::abs)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (total.signum() > 0) { historySum = historySum.add(total); monthsWithData++; }
+        }
+        BigDecimal avg = monthsWithData == 0 ? BigDecimal.ZERO
+                : historySum.divide(BigDecimal.valueOf(monthsWithData), 2, java.math.RoundingMode.HALF_EVEN);
+
+        if (monthToDate.signum() == 0 && avg.signum() == 0) {
+            return "You haven't recorded any " + category.toLowerCase(Locale.ROOT)
+                    + " spending recently, so there's nothing to project.";
+        }
+
+        int daysElapsed = today.getDayOfMonth();
+        int daysInMonth = current.lengthOfMonth();
+        BigDecimal dailyRate = monthToDate.divide(BigDecimal.valueOf(Math.max(daysElapsed, 1)), 4,
+                java.math.RoundingMode.HALF_EVEN);
+        BigDecimal projected = monthToDate
+                .add(dailyRate.multiply(BigDecimal.valueOf(daysInMonth - daysElapsed)))
+                .setScale(2, java.math.RoundingMode.HALF_EVEN);
+
+        StringBuilder out = new StringBuilder(String.format(
+                "You've spent $%.2f on %s so far this month. At this pace you're projected to "
+                        + "reach $%.2f by the end of %s.",
+                monthToDate, category, projected, current));
+
+        if (avg.signum() > 0) {
+            BigDecimal diff = projected.subtract(avg);
+            String word = diff.signum() > 0 ? "above" : diff.signum() < 0 ? "below" : "in line with";
+            out.append(String.format(" That's %s your usual 3-month average for %s ($%.2f).",
+                    word, category, avg));
+            if (diff.signum() > 0 && monthToDate.signum() > 0) {
+                out.append(String.format(
+                        "%n%nSuggestions:%n- \" %s\" is pacing $%.2f above its average. Cutting roughly $%.2f a week "
+                                + "over the remaining weeks would bring it back in line.",
+                        category, diff,
+                        diff.multiply(BigDecimal.valueOf(7))
+                                .divide(BigDecimal.valueOf(Math.max(current.lengthOfMonth() - daysElapsed, 1)), 2,
+                                        java.math.RoundingMode.HALF_EVEN)));
+            }
+        }
+
+        // Tie into the monthly budget if one exists
+        monthlyBudgetRepository.findByUser_UserIdAndBudgetMonth(userId, current.atDay(1))
+                .map(MonthlyBudget::getBudgetAmount)
+                .ifPresent(b -> {
+                    // Category share estimate from history, as a rough per-category guide
+                    if (avg.signum() > 0 && avg.compareTo(b) > 0) {
+                        out.append(String.format(
+                                "%n- Heads up: your %s average alone ($%.2f/month) exceeds your $%.2f "
+                                        + "total monthly budget.",
+                                category, avg, b));
+                    }
+                });
+
+        return out.toString();
+    }
+
+    /** Chart: recent monthly totals for one category, plus the projected bar. */
+    private AnalysisResponse categoryProjectionChart(Long userId, Map<String, String> p, String formatted) {
+        String category = p.get("type"); // already normalised by the read handler, but be safe:
+        if (category == null) return null;
+
+        YearMonth current = YearMonth.now();
+        LocalDate today = LocalDate.now();
+        List<Transaction> txns =
+                transactionRepository.findByUser_UserIdOrderByTransactionDateDesc(userId);
+
+        List<ChartPoint> points = new ArrayList<>();
+        for (int i = 2; i >= 0; i--) {
+            YearMonth m = current.minusMonths(i);
+            points.add(new ChartPoint(m.toString(), categoryTotal(txns, category, m).toPlainString()));
+        }
+        points.add(new ChartPoint(current + " (proj.)", "0")); // replaced below once projected is known
+
+        // Re-derive projection the same way as the read handler (kept simple for chart consistency)
+        BigDecimal monthToDate = categoryTotal(txns, category, current);
+        int daysElapsed = today.getDayOfMonth();
+        BigDecimal dailyRate = monthToDate.divide(BigDecimal.valueOf(Math.max(daysElapsed, 1)), 4,
+                java.math.RoundingMode.HALF_EVEN);
+        BigDecimal projected = monthToDate
+                .add(dailyRate.multiply(BigDecimal.valueOf(current.lengthOfMonth() - daysElapsed)))
+                .setScale(2, java.math.RoundingMode.HALF_EVEN);
+        points.set(points.size() - 1, new ChartPoint(current + " (proj.)", projected.toPlainString()));
+
+        return new AnalysisResponse("category_spending_projection", formatted, "bar",
+                current.minusMonths(2).atDay(1).toString(), current.atEndOfMonth().toString(),
+                category, List.copyOf(points), projected.toPlainString(), false);
+    }
+
+    /** Absolute expense total for one category in one month. */
+    private BigDecimal categoryTotal(List<Transaction> txns, String category, YearMonth month) {
+        return txns.stream()
+                .filter(t -> category.equals(t.getTransactionType())
+                        && t.getTransactionDate() != null
+                        && YearMonth.from(t.getTransactionDate()).equals(month))
+                .map(Transaction::getTransactionAmount)
+                .filter(a -> a != null && a.signum() < 0)
+                .map(BigDecimal::abs)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }
 
