@@ -56,7 +56,7 @@ public class AiOrchestratorService {
 
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
-    private static final Set<String> VALID_CATEGORIES = Set.of(
+    public static final Set<String> VALID_CATEGORIES = Set.of(
             "Clothing", "Entertainment", "Transport", "Groceries",
             "Salary", "Rent", "Other"
     );
@@ -210,8 +210,10 @@ public class AiOrchestratorService {
     /** Searches for transactions whose names contain a given keyword. */
     private String searchTransactions(Long userId, Map<String, String> params) {
         String keyword = params.get("keyword");
-        List<Transaction> results = transactionRepository
-                .findByUser_UserIdAndTransactionNameContaining(userId, keyword);
+        List<Transaction> results = transactionRepository.findByUser_UserIdAndTransactionNameContaining(userId, keyword);
+        if (results.isEmpty()) {                                  // fall back to description
+            results = transactionRepository.findByUser_UserIdAndTransactionDescriptionContaining(userId, keyword);
+        }
 
         if (results.isEmpty()) {
             return "No transactions found matching '" + keyword + "'.";
@@ -263,6 +265,7 @@ public class AiOrchestratorService {
         String keyword = params.get("keyword");
         String date = params.get("date");
         String type = params.get("type");
+        boolean deleteAll = "all".equalsIgnoreCase(params.get("match_scope"));
 
         List<Transaction> candidates;
 
@@ -291,13 +294,17 @@ public class AiOrchestratorService {
             return "No transactions found matching your criteria.";
         }
 
-        // Safety check: only allow deletion of single transaction after confirmation
-        if (candidates.size() > 1) {
-            StringBuilder msg = new StringBuilder();
-            msg.append(String.format("Found %d matching transactions. ", candidates.size()));
-            msg.append("To prevent accidental deletions, please be more specific. ");
-            msg.append("Try combining criteria—e.g., \"delete coffee from yesterday\".");
-            return msg.toString();
+        // Safety check: only allow deletion of intended transactions after confirmation
+        if (candidates.size() > 1 && !deleteAll) {
+            return String.format(
+                    "Found %d matching transactions. To prevent accidental deletions, please be more specific "
+                            + "(e.g., \"delete coffee from yesterday\"), or say \"delete all\" to remove every match.",
+                    candidates.size());
+        }
+
+        if (deleteAll && candidates.size() > 1) {
+            transactionRepository.deleteAll(candidates);
+            return String.format("Deleted %d transactions.", candidates.size());
         }
 
         Transaction toDelete = candidates.get(0);
