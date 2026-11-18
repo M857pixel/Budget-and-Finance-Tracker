@@ -3,11 +3,25 @@ import AccountRecovery from './AccountRecovery'
 import AssistantChat from './AssistantChat'
 import MonthlySummary from './MonthlySummary'
 import TransactionAmount from './TransactionAmount'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import CurrencyConverter from './CurrencyConverter'
 
 // array of selectable transaction types
 const transactionTypes = ['Clothing', 'Entertainment', 'Transport', 'Groceries', 'Salary', 'Rent', 'Other' ]
+const transactionMonths = [
+    { value: '01', label: 'January' },
+    { value: '02', label: 'February' },
+    { value: '03', label: 'March' },
+    { value: '04', label: 'April' },
+    { value: '05', label: 'May' },
+    { value: '06', label: 'June' },
+    { value: '07', label: 'July' },
+    { value: '08', label: 'August' },
+    { value: '09', label: 'September' },
+    { value: '10', label: 'October' },
+    { value: '11', label: 'November' },
+    { value: '12', label: 'December' },
+]
 
 // transaction fields returned by the backend
 type Transaction = {
@@ -18,6 +32,7 @@ type Transaction = {
     amount: number
     date: string
     description: string | null
+    recurring: boolean
 }
 
 // format the date without shifting the day
@@ -119,6 +134,7 @@ function App() {
     const [transactionType, setTransactionType] = useState(transactionTypes[0])
     const [transactionDate, setTransactionDate] = useState('')
     const [transactionDescription, setTransactionDescription] = useState('')
+    const [recurring, setRecurring] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [summaryRefresh, setSummaryRefresh] = useState(0)
     useEffect(() => {
@@ -130,20 +146,104 @@ function App() {
 
     // saved transactions and history feedback
     const [transactions, setTransactions] = useState<Transaction[]>([])
+    const [historyCatalog, setHistoryCatalog] = useState<Transaction[]>([])
     const [historyError, setHistoryError] = useState('')
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+    const [isLoadingHistoryCatalog, setIsLoadingHistoryCatalog] = useState(false)
+    const [historyTypeFilter, setHistoryTypeFilter] = useState('All')
+    const [historyMonthFilter, setHistoryMonthFilter] = useState('All')
+    const [historyYearFilter, setHistoryYearFilter] = useState('All')
+    const historyCatalogCache = useRef<{ userId: number; refresh: number; transactions: Transaction[] } | null>(null)
 
-    // load history when the tab opens or the user changes
+    const availableHistory = historyCatalog.filter((transaction) => transaction.userId === currentUserId)
+    const historyTypes = Array.from(new Set(availableHistory.map((transaction) => transaction.type).filter(Boolean)))
+        .sort((first, second) => first.localeCompare(second))
+    const historyYears = Array.from(new Set([
+        new Date().getFullYear(),
+        ...availableHistory.map((transaction) => Number(transaction.date.slice(0, 4))).filter(Number.isFinite),
+    ])).sort((first, second) => second - first)
+    const historyFiltersSelected = historyTypeFilter !== 'All'
+        || historyMonthFilter !== 'All' || historyYearFilter !== 'All'
+
+    // Load the full history only when needed for filter options or an unfiltered view.
     useEffect(() => {
         if (activeTab !== 'history' || currentUserId === null) return
         const controller = new AbortController()
         const loadHistory = async () => {
-            setTransactions([])
+            setHistoryError('')
+            setIsLoadingHistoryCatalog(true)
+            try {
+                let saved: Transaction[]
+                const cached = historyCatalogCache.current
+                if (cached?.userId === currentUserId && cached.refresh === summaryRefresh) {
+                    saved = cached.transactions
+                } else {
+                    const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions`, {
+                        // send the login cookie to check account access
+                        credentials: 'include', signal: controller.signal,
+                    })
+                    if (!response.ok) {
+                        throw new Error(response.status === 401 || response.status === 403
+                            ? 'Please log in again to view your transactions.'
+                            : 'Could not load transactions. Reopen this tab to try again.')
+                    }
+                    const received: Transaction[] = await response.json()
+                    saved = received.filter((transaction) => transaction.userId === currentUserId)
+                    historyCatalogCache.current = { userId: currentUserId, refresh: summaryRefresh, transactions: saved }
+                    setHistoryCatalog(saved)
+                }
+                if (controller.signal.aborted) return
+                setHistoryCatalog(saved)
+            } catch (error) {
+                if (!controller.signal.aborted) {
+                    setHistoryError(error instanceof Error ? error.message : 'Could not load transactions.')
+                }
+            } finally {
+                if (!controller.signal.aborted) setIsLoadingHistoryCatalog(false)
+            }
+        }
+        void loadHistory()
+        // Cancel the request when leaving history, switching users, or refreshing the ledger.
+        return () => controller.abort()
+    }, [activeTab, currentUserId, summaryRefresh])
+
+    // Restore the cached full history when the user clears all filters.
+    useEffect(() => {
+        if (activeTab !== 'history' || currentUserId === null || historyFiltersSelected) return
+        const cached = historyCatalogCache.current
+        if (cached?.userId === currentUserId && cached.refresh === summaryRefresh) {
+            setTransactions(cached.transactions)
+            setHistoryError('')
+        }
+    }, [activeTab, currentUserId, historyCatalog, historyFiltersSelected, summaryRefresh])
+
+    // Use the existing type/month/year endpoints when filters are selected.
+    useEffect(() => {
+        if (activeTab !== 'history' || currentUserId === null) return
+        if (!historyFiltersSelected) {
+            setIsLoadingHistory(false)
+            return
+        }
+        const controller = new AbortController()
+        const loadFilteredHistory = async () => {
             setHistoryError('')
             setIsLoadingHistory(true)
             try {
-                const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions`, {
-                    // send the login cookie to check account access
+                const api = `http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions`
+                const hasMonthAndYear = historyMonthFilter !== 'All' && historyYearFilter !== 'All'
+                let url = api
+                if (hasMonthAndYear) {
+                    const month = `${historyYearFilter}-${historyMonthFilter}`
+                    const monthQuery = new URLSearchParams({ month }).toString()
+                    url = historyTypeFilter === 'All'
+                        ? `${api}/month?${monthQuery}`
+                        : `${api}/type/${encodeURIComponent(historyTypeFilter)}/month?${monthQuery}`
+                } else if (historyTypeFilter !== 'All') {
+                    url = `${api}/type/${encodeURIComponent(historyTypeFilter)}`
+                }
+
+                const response = await fetch(url, {
+                    // send the login cookie so the backend can authorize this account
                     credentials: 'include', signal: controller.signal,
                 })
                 if (!response.ok) {
@@ -153,8 +253,10 @@ function App() {
                 }
                 const saved: Transaction[] = await response.json()
                 if (!controller.signal.aborted) {
-                    // show transactions for the current user
-                    setTransactions(saved.filter((transaction) => transaction.userId === currentUserId))
+                    setTransactions(saved.filter((transaction) => transaction.userId === currentUserId
+                        && (historyTypeFilter === 'All' || transaction.type === historyTypeFilter)
+                        && (historyMonthFilter === 'All' || transaction.date.slice(5, 7) === historyMonthFilter)
+                        && (historyYearFilter === 'All' || transaction.date.slice(0, 4) === historyYearFilter)))
                 }
             } catch (error) {
                 if (!controller.signal.aborted) {
@@ -164,10 +266,9 @@ function App() {
                 if (!controller.signal.aborted) setIsLoadingHistory(false)
             }
         }
-        void loadHistory()
-        // cancel the request when leaving history or switching users
+        void loadFilteredHistory()
         return () => controller.abort()
-    }, [activeTab, currentUserId, summaryRefresh])
+    }, [activeTab, currentUserId, historyFiltersSelected, historyTypeFilter, historyMonthFilter, historyYearFilter, summaryRefresh])
 
     const resetTransaction = () => {
         setAmount('')
@@ -176,6 +277,7 @@ function App() {
         setTransactionType(transactionTypes[0])
         setTransactionDate('')
         setTransactionDescription('')
+        setRecurring(false)
     }
 
     const addTransaction = async () => {
@@ -202,6 +304,7 @@ function App() {
                     amount: amountSign * Number(amount),
                     date: transactionDate,
                     description: transactionDescription.trim() || null,
+                    recurring,
                 }),
             })
             if (response.ok) {
@@ -469,10 +572,17 @@ function App() {
                                         <input id="transaction-date" type="date" required value={transactionDate}
                                             onChange={(event) => setTransactionDate(event.target.value)} />
                                     </label>
-                                    <label className="transaction-description" htmlFor="transaction-description">Description (optional)
-                                        <textarea id="transaction-description" rows={3} maxLength={250} placeholder="Add a note"
-                                            value={transactionDescription} onChange={(event) => setTransactionDescription(event.target.value)} />
-                                    </label>
+                                    <div className="transaction-description" style={{ display: 'flex', alignItems: 'end', gap: '16px' }}>
+                                        <label htmlFor="transaction-description" style={{ flex: 1 }}>Description (optional)
+                                            <textarea id="transaction-description" rows={3} maxLength={250} placeholder="Add a note"
+                                                value={transactionDescription} onChange={(event) => setTransactionDescription(event.target.value)} />
+                                        </label>
+                                        <label htmlFor="transaction-recurring" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                                            <input id="transaction-recurring" type="checkbox" checked={recurring}
+                                                onChange={(event) => setRecurring(event.target.checked)} style={{ width: 'auto' }} />
+                                            Recurring
+                                        </label>
+                                    </div>
                                 </div>
                                 <button type="submit">{isSaving ? 'Saving...' : 'Save transaction'}</button>
                             </fieldset>
@@ -493,15 +603,41 @@ function App() {
                 {activeTab === 'history' && (
                     <section className="transaction-history">
                         <h2>Transaction History</h2>
+                        {currentUserId !== null && <div className="history-filters">
+                            <label htmlFor="history-type-filter">Transaction type
+                                <select id="history-type-filter" value={historyTypeFilter}
+                                    onChange={(event) => setHistoryTypeFilter(event.target.value)}>
+                                    <option value="All">All</option>
+                                    {historyTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                                </select>
+                            </label>
+                            <label htmlFor="history-month-filter">Month
+                                <select id="history-month-filter" value={historyMonthFilter}
+                                    onChange={(event) => setHistoryMonthFilter(event.target.value)}>
+                                    <option value="All">All</option>
+                                    {transactionMonths.map((month) => <option key={month.value} value={month.value}>{month.label}</option>)}
+                                </select>
+                            </label>
+                            <label htmlFor="history-year-filter">Year
+                                <select id="history-year-filter" value={historyYearFilter}
+                                    onChange={(event) => setHistoryYearFilter(event.target.value)}>
+                                    <option value="All">All</option>
+                                    {historyYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                                </select>
+                            </label>
+                        </div>}
                         {currentUserId === null ? <p>Please log in to view your saved transactions.</p>
-                            : isLoadingHistory ? <p role="status">Loading transactions...</p>
+                            : isLoadingHistory || isLoadingHistoryCatalog ? <p role="status">Loading transactions...</p>
                             : historyError ? <p role="alert">{historyError}</p>
-                            : transactions.length === 0 ? <p>No transactions saved yet.</p>
+                            : transactions.length === 0 ? <p>{historyFiltersSelected
+                                ? 'No transactions found for the selected filters.'
+                                : 'No transactions saved yet.'}</p>
                             : <div className="history-table-container">
                                 <table>
                                     <thead><tr>
                                         <th scope="col">Name</th><th scope="col">Transaction type</th>
                                         <th scope="col">Amount</th><th scope="col">Date</th><th scope="col">Description</th>
+                                        <th scope="col">Recurring</th>
                                     </tr></thead>
                                     <tbody>{transactions.map((transaction) => (
                                         <tr key={transaction.transactionId}>
@@ -515,6 +651,7 @@ function App() {
                                                 }} /></td>
                                             <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
                                             <td>{transaction.description || '—'}</td>
+                                            <td>{transaction.recurring ? 'Yes' : 'No'}</td>
                                         </tr>
                                     ))}</tbody>
                                 </table>

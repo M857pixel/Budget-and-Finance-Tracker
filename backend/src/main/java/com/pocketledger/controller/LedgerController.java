@@ -162,7 +162,7 @@ public class LedgerController {
 
     /*
     Stores created transaction in Supabase
-    @Return: TransactionResponse object (Contains: transactionID, userID, name, type, amount, data, description)
+    @Return: TransactionResponse object (Contains: transactionID, userID, name, type, amount, date, description, recurring)
      */
     @PostMapping("/users/{userId}/transactions")
     @ResponseStatus(HttpStatus.CREATED)
@@ -177,7 +177,8 @@ public class LedgerController {
                 request.type(),
                 request.amount(),
                 request.date(),
-                request.description()
+                request.description(),
+                request.recurring()
         ));
         return toResponse(saved);
     }
@@ -261,7 +262,7 @@ public class LedgerController {
 
     /*
     Update only the supplied details of a transaction owned by this user
-    @Returns: TransactionResponse (Contains: transactionID, userID, name, type, amount, data, description)
+    @Returns: TransactionResponse (Contains: transactionID, userID, name, type, amount, date, description, recurring)
     */
     @PatchMapping("/users/{userId}/transactions/{transactionId}")
     public TransactionResponse updateTransaction(@PathVariable Long userId,
@@ -282,7 +283,8 @@ public class LedgerController {
                 request.type(),
                 request.amount(),
                 request.date(),
-                request.description()
+                request.description(),
+                request.recurring()
         );
         Transaction saved = transactionRepository.save(transaction);
         return toResponse(saved);
@@ -327,7 +329,8 @@ public class LedgerController {
                 transaction.getTransactionType(),
                 transaction.getTransactionAmount(),
                 transaction.getTransactionDate(),
-                transaction.getTransactionDescription()
+                transaction.getTransactionDescription(),
+                transaction.getRecurringTransaction()
         );
     }
 
@@ -338,9 +341,9 @@ public class LedgerController {
     public record UserResponse(Long userId, String email, String firstName,
                                String lastName, BigDecimal balance) {}
     public record CreateTransactionRequest(String name, String type, BigDecimal amount,
-                                           LocalDate date, String description) {}
+                                           LocalDate date, String description, boolean recurring) {}
     public record UpdateTransactionRequest(String name, String type, BigDecimal amount,
-                                           LocalDate date, String description) {}
+                                           LocalDate date, String description, Boolean recurring) {}
     public record TransactionResponse(Long transactionId, Long userId, String name, String type,
-                                      BigDecimal amount, LocalDate date, String description) {}
+                                      BigDecimal amount, LocalDate date, String description, boolean recurring) {}
 }

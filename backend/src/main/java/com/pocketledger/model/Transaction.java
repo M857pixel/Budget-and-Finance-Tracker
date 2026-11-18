@@ -54,6 +54,9 @@ public class Transaction {
     @Column(name = "transaction_description", length = 250)
     private String transactionDescription;
 
+    @Column(name = "recurring_transaction")
+    private boolean recurringTransaction;
+
     //JPA needs a no argument constructor to create transactions when reading rows
     protected Transaction() {}
 
@@ -61,12 +64,21 @@ public class Transaction {
     public Transaction(User user, String transactionName, String transactionType,
                        BigDecimal transactionAmount, LocalDate transactionDate,
                        String transactionDescription) {
+        this(user, transactionName, transactionType, transactionAmount, transactionDate,
+                transactionDescription, false);
+    }
+
+    //Constructor to create transaction before saving with its recurring status
+    public Transaction(User user, String transactionName, String transactionType,
+                       BigDecimal transactionAmount, LocalDate transactionDate,
+                       String transactionDescription, boolean recurringTransaction) {
         this.user = user;
         this.transactionName = transactionName;
         this.transactionType = transactionType;
         this.transactionAmount = transactionAmount;
         this.transactionDate = transactionDate;
         this.transactionDescription = transactionDescription;
+        this.recurringTransaction = recurringTransaction;
     }
 
     //Getters
@@ -77,15 +89,17 @@ public class Transaction {
     public BigDecimal getTransactionAmount() { return transactionAmount; }
     public LocalDate getTransactionDate() { return transactionDate; }
     public String getTransactionDescription() { return transactionDescription; }
+    public boolean getRecurringTransaction() { return recurringTransaction; }
 
     //Apply supplied fields only; null values leave existing fields unchanged.
     public void updateDetails(String transactionName, String transactionType,
                               BigDecimal transactionAmount, LocalDate transactionDate,
-                              String transactionDescription) {
+                              String transactionDescription, Boolean recurringTransaction) {
         if (transactionName != null) this.transactionName = transactionName;
         if (transactionType != null) this.transactionType = transactionType;
         if (transactionAmount != null) this.transactionAmount = transactionAmount;
         if (transactionDate != null) this.transactionDate = transactionDate;
         if (transactionDescription != null) this.transactionDescription = transactionDescription;
+        if (recurringTransaction != null) this.recurringTransaction = recurringTransaction;
     }
 }

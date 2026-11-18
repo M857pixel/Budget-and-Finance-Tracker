@@ -109,7 +109,7 @@ public class AiOrchestratorService {
 
         int updated = 0;
         for (Transaction t : matching) {
-            t.updateDetails(null, newType, null, null, null);
+            t.updateDetails(null, newType, null, null, null, null);
             transactionRepository.save(t);
             updated++;
         }
@@ -186,7 +186,8 @@ public class AiOrchestratorService {
                 newType,
                 newAmount,
                 newDate,
-                newDescription
+                newDescription,
+                null //Can't update recurring transaction as of now
         );
         Transaction saved = transactionRepository.save(transaction);
 
@@ -253,7 +254,7 @@ public class AiOrchestratorService {
         String description = params.getOrDefault("description", "");
 
         Transaction saved = transactionRepository.save(
-                new Transaction(user, name, type, amount, date, description));
+                new Transaction(user, name, type, amount, date, description, false));
 
         return String.format("Added \"%s\" (%s) for $%.2f on %s.",
                 saved.getTransactionName(), saved.getTransactionType(),
