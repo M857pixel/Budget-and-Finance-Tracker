@@ -4,6 +4,7 @@ import type { AnalysisResult, ChartType } from './AnalysisChart'
 const AnalysisChart = lazy(() => import('./AnalysisChart'))
 
 export default function AssistantChat() {
+    const [isOpen, setIsOpen] = useState(false)
     const [query, setQuery] = useState('')
     const [answer, setAnswer] = useState('')
     const [result, setResult] = useState<AnalysisResult | null>(null)
@@ -34,23 +35,30 @@ export default function AssistantChat() {
         finally { setSending(false) }
     }
 
-    return <aside className="assistant-chat" aria-labelledby="assistant-heading">
-        <div className="assistant-title"><h2 id="assistant-heading">PocketLedger assistant</h2><span className="analysis-badge">Charts</span></div>
-        <p className="assistant-hint">Ask about your transactions, or request a chart.</p>
-        <form onSubmit={event => { event.preventDefault(); void send() }}>
-            <label htmlFor="assistant-query">Ask a question</label>
-            <input id="assistant-query" value={query} disabled={sending}
-                   placeholder="Show spending by category this month"
-                   onChange={event => setQuery(event.target.value)} />
-            <div className="assistant-actions"><button type="submit" disabled={sending || !query.trim()}>Analyze</button></div>
-        </form>
-        <p role="status">{sending ? 'Working…' : answer}</p>
-        {result?.chart && <>
-            <label htmlFor="analysis-chart-type">Chart type</label>
-            <select id="analysis-chart-type" value={chart} onChange={event => setChart(event.target.value as ChartType)}>
-                <option value="donut">Donut</option><option value="bar">Bar</option><option value="line">Line</option>
-            </select>
-            <Suspense fallback={<p>Loading chart…</p>}><AnalysisChart result={result} chart={chart} /></Suspense>
-        </>}
-    </aside>
+    return <div className="assistant-widget">
+        <button type="button" className="assistant-toggle" aria-expanded={isOpen}
+                aria-controls="assistant-panel" aria-label={isOpen ? 'Close assistant' : 'Open assistant'}
+                onClick={() => setIsOpen(open => !open)}>
+            <span aria-hidden="true">{isOpen ? '×' : 'AI'}</span>
+        </button>
+        <aside id="assistant-panel" className="assistant-chat" aria-labelledby="assistant-heading" hidden={!isOpen}>
+            <div className="assistant-title"><h2 id="assistant-heading">PocketLedger assistant</h2><span className="analysis-badge">Charts</span></div>
+            <p className="assistant-hint">Ask about your transactions, or request a chart.</p>
+            <form onSubmit={event => { event.preventDefault(); void send() }}>
+                <label htmlFor="assistant-query">Ask a question</label>
+                <input id="assistant-query" value={query} disabled={sending}
+                       placeholder="Show spending by category this month"
+                       onChange={event => setQuery(event.target.value)} />
+                <div className="assistant-actions"><button type="submit" disabled={sending || !query.trim()}>Analyze</button></div>
+            </form>
+            <p role="status">{sending ? 'Working…' : answer}</p>
+            {result?.chart && <>
+                <label htmlFor="analysis-chart-type">Chart type</label>
+                <select id="analysis-chart-type" value={chart} onChange={event => setChart(event.target.value as ChartType)}>
+                    <option value="donut">Donut</option><option value="bar">Bar</option><option value="line">Line</option>
+                </select>
+                <Suspense fallback={<p>Loading chart…</p>}><AnalysisChart result={result} chart={chart} /></Suspense>
+            </>}
+        </aside>
+    </div>
 }
