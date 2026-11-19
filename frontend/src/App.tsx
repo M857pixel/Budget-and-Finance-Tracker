@@ -53,11 +53,13 @@ function App() {
     const [currentUserName, setCurrentUserName] = useState('')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
+    const [confirmPassword, setConfirmPassword] = useState('')
     const [loginError, setLoginError] = useState('')
     const [isLoggingIn, setIsLoggingIn] = useState(false)
     const [authScreen, setAuthScreen] = useState<'login' | 'create'>('login')
     const [firstName, setFirstName] = useState('')
     const [lastName, setLastName] = useState('')
+    const passwordsMismatch = confirmPassword.length > 0 && confirmPassword !== password
     const meetsPasswordRequirements = password.length >= 8
         && /[A-Z]/.test(password)
         && /[0-9]/.test(password)
@@ -67,6 +69,7 @@ function App() {
         setAuthScreen((screen) => screen === 'login' ? 'create' : 'login')
         setLoginError('')
         setPassword('')
+        setConfirmPassword('')
         setFirstName('')
         setLastName('')
     }
@@ -82,6 +85,10 @@ function App() {
             setLoginError('Use at least 8 characters, including an uppercase letter, a number, and a symbol.')
             return
         }
+        if (authScreen === 'create' && password !== confirmPassword) {
+            setLoginError('Passwords do not match.')
+            return
+        }
         setIsLoggingIn(true)
         try {
             const isCreatingAccount = authScreen === 'create'
@@ -95,7 +102,12 @@ function App() {
                     : { email: email.trim(), password }),
             })
             if (response.ok) {
-                if (isCreatingAccount) { setPassword(''); setRecovery('pending'); return }
+                if (isCreatingAccount) {
+                    setPassword('')
+                    setConfirmPassword('')
+                    setRecovery('pending')
+                    return
+                }
                 // keep the user ID for transaction requests
                 const user: { userId: number; email: string; firstName: string; lastName: string } = await response.json()
                 sessionStorage.setItem('currentUser', JSON.stringify({ userId: user.userId, email: user.email }))
@@ -148,6 +160,30 @@ function App() {
     const [transactions, setTransactions] = useState<Transaction[]>([])
     const [historyCatalog, setHistoryCatalog] = useState<Transaction[]>([])
     const [historyError, setHistoryError] = useState('')
+    const [deleteError, setDeleteError] = useState('')
+    const [deletingTransactionId, setDeletingTransactionId] = useState<number | null>(null)
+
+    const deleteTransaction = async (transactionId: number) => {
+        if (currentUserId === null || deletingTransactionId !== null) return
+        setDeletingTransactionId(transactionId)
+        setDeleteError('')
+        try {
+            const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions?transactionId=${transactionId}`, {
+                method: 'DELETE', credentials: 'include',
+            })
+            if (!response.ok) {
+                throw new Error(response.status === 401 || response.status === 403
+                    ? 'Please log in again to delete transactions.'
+                    : 'Could not delete the transaction. Please try again.')
+            }
+            setTransactions((current) => current.filter((transaction) => transaction.transactionId !== transactionId))
+            setSummaryRefresh((value) => value + 1)
+        } catch (error) {
+            setDeleteError(error instanceof Error ? error.message : 'Could not delete the transaction. Please try again.')
+        } finally {
+            setDeletingTransactionId(null)
+        }
+    }
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
     const [isLoadingHistoryCatalog, setIsLoadingHistoryCatalog] = useState(false)
     const [historyTypeFilter, setHistoryTypeFilter] = useState('All')
@@ -407,13 +443,6 @@ function App() {
         }
     }
 
-    // checks the backend connection and displays its response
-    const testBackend = async () => {
-        const response = await fetch('http://localhost:8080/api/hello')
-        const text = await response.text()
-        setMessage(text)
-    }
-
     if (recovery) return <AccountRecovery mode={recovery} email={email} back={() => { history.replaceState(null, '', window.location.pathname); setRecovery(''); setAuthScreen('login') }} />
 
     if (!isLoggedIn) {
@@ -449,11 +478,22 @@ function App() {
                         required maxLength={50} disabled={isLoggingIn} value={password}
                         onChange={(event) => setPassword(event.target.value)} />
                     {authScreen === 'create' && (
+                        <>
+                            <label htmlFor="confirm-password">Confirm password</label>
+                            <input id="confirm-password" type="password" autoComplete="new-password"
+                                required maxLength={50} disabled={isLoggingIn} value={confirmPassword}
+                                aria-invalid={passwordsMismatch}
+                                aria-describedby={passwordsMismatch ? 'password-mismatch' : undefined}
+                                onChange={(event) => setConfirmPassword(event.target.value)} />
+                            {passwordsMismatch && <p id="password-mismatch" role="alert">Passwords do not match.</p>}
+                        </>
+                    )}
+                    {authScreen === 'create' && (
                         <p id="password-requirements" className="auth-note">
                             Use 8–50 characters with at least one uppercase letter, one number, and one symbol (e.g. !, @, #).
                         </p>
                     )}
-                    <button type="submit" disabled={isLoggingIn || (authScreen === 'create' && !meetsPasswordRequirements)}>
+                    <button type="submit" disabled={isLoggingIn || (authScreen === 'create' && (!meetsPasswordRequirements || passwordsMismatch))}>
                         {isLoggingIn ? (authScreen === 'create' ? 'Creating account...' : 'Logging in...') : (authScreen === 'create' ? 'Create account' : 'Log in')}
                     </button>
                     <button type="button" className="auth-secondary" disabled={isLoggingIn} onClick={switchAuthScreen}>
@@ -489,6 +529,7 @@ function App() {
                 // clear history when logging out
                 setTransactions([])
                 setHistoryError('')
+                setDeleteError('')
                 setCurrentUserId(null)
                 setCurrentUserName('')
                 setIsLoggedIn(false)
@@ -587,11 +628,6 @@ function App() {
                                 <button type="submit">{isSaving ? 'Saving...' : 'Save transaction'}</button>
                             </fieldset>
                         </form>
-                        <div className="actions">
-                            <button onClick={testBackend}>
-                                Test backend
-                            </button>
-                        </div>
 
                         <p role="status">{message}</p>
                     </section>
@@ -626,6 +662,7 @@ function App() {
                                 </select>
                             </label>
                         </div>}
+                        {deleteError && <p role="alert">{deleteError}</p>}
                         {currentUserId === null ? <p>Please log in to view your saved transactions.</p>
                             : isLoadingHistory || isLoadingHistoryCatalog ? <p role="status">Loading transactions...</p>
                             : historyError ? <p role="alert">{historyError}</p>
@@ -638,6 +675,7 @@ function App() {
                                         <th scope="col">Name</th><th scope="col">Transaction type</th>
                                         <th scope="col">Amount</th><th scope="col">Date</th><th scope="col">Description</th>
                                         <th scope="col">Recurring</th>
+                                        <th scope="col" aria-label="Actions" />
                                     </tr></thead>
                                     <tbody>{transactions.map((transaction) => (
                                         <tr key={transaction.transactionId}>
@@ -652,6 +690,19 @@ function App() {
                                             <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
                                             <td>{transaction.description || '—'}</td>
                                             <td>{transaction.recurring ? 'Yes' : 'No'}</td>
+                                            <td className="transaction-actions">
+                                                <button type="button" className="transaction-delete"
+                                                    aria-label={`Delete ${transaction.name}`} title="Delete transaction"
+                                                    disabled={deletingTransactionId !== null}
+                                                    aria-busy={deletingTransactionId === transaction.transactionId}
+                                                    onClick={() => void deleteTransaction(transaction.transactionId)}>
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+                                                        strokeLinejoin="round" aria-hidden="true">
+                                                        <path d="M3 6h18M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M5 6l1 14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-14M10 10v7M14 10v7" />
+                                                    </svg>
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}</tbody>
                                 </table>

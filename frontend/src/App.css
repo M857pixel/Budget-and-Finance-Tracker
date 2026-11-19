@@ -403,6 +403,37 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.transaction-actions {
+  width: 32px;
+}
+
+.transaction-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #b42318;
+  opacity: 0;
+}
+
+.transaction-history tr:hover .transaction-delete,
+.transaction-history tr:focus-within .transaction-delete,
+.transaction-delete[aria-busy="true"] {
+  opacity: 1;
+}
+
+.transaction-delete:hover:not(:disabled) {
+  background: #fee4e2;
+  border-color: #fda29b;
+}
+
+@media (hover: none) {
+  .transaction-delete { opacity: 1; }
+}
+
 
 .monthly-summary {
   margin: 24px 0;
