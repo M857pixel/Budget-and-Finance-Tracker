@@ -6,6 +6,10 @@ import TransactionAmount from './TransactionAmount'
 import TransactionField from './TransactionField'
 import { useEffect, useRef, useState } from 'react'
 import CurrencyConverter from './CurrencyConverter'
+import { loadCurrencies, loadExchangeRate, type Currency, type ExchangeRate } from './exchangeRates'
+
+const maxTransactionAmount = 9_999_999_999.99
+const usdFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
 // array of selectable transaction types
 const transactionTypes = ['Housing',
@@ -157,6 +161,12 @@ function App() {
     const [message, setMessage] = useState('')
     const [amount, setAmount] = useState('')
     const [amountSign, setAmountSign] = useState<-1 | 1>(-1)
+    const [currency, setCurrency] = useState('USD')
+    const [currencies, setCurrencies] = useState<Currency[]>([])
+    const [rate, setRate] = useState<ExchangeRate | null>(null)
+    const [currencyError, setCurrencyError] = useState('')
+    const [rateError, setRateError] = useState('')
+    const [currencyRetry, setCurrencyRetry] = useState(0)
     const [transactionName, setTransactionName] = useState('')
     const [transactionType, setTransactionType] = useState(transactionTypes[0])
     const [transactionDate, setTransactionDate] = useState('')
@@ -170,6 +180,40 @@ function App() {
         return () => window.removeEventListener('ledger-categories-changed', refreshCategories)
     }, [])
     const [activeTab, setActiveTab] = useState<'add' | 'currency' | 'history' | 'import'>('add')
+
+    useEffect(() => {
+        if (!isLoggedIn || activeTab !== 'add') return
+        const controller = new AbortController()
+        void loadCurrencies(controller.signal).then((available) => {
+            if (!controller.signal.aborted) {
+                setCurrencies(available)
+                setCurrencyError('')
+            }
+        }).catch(() => {
+            if (!controller.signal.aborted) setCurrencyError('Could not load foreign currencies.')
+        })
+        return () => controller.abort()
+    }, [activeTab, isLoggedIn, currencyRetry])
+
+    useEffect(() => {
+        if (activeTab !== 'add' || currency === 'USD') return
+        const controller = new AbortController()
+        void loadExchangeRate(currency, controller.signal).then((quote) => {
+            if (!controller.signal.aborted) {
+                setRate(quote)
+                setRateError('')
+            }
+        }).catch(() => {
+            if (!controller.signal.aborted) setRateError('Could not load the exchange rate.')
+        })
+        return () => controller.abort()
+    }, [activeTab, currency, currencyRetry])
+
+    const currentRate = rate?.quote === currency ? rate.rate : null
+    const numericAmount = Number(amount)
+    const usdAmount = currency === 'USD' ? numericAmount
+        : currentRate === null ? null : Number((numericAmount / currentRate).toFixed(2))
+    const validUsdAmount = usdAmount !== null && usdAmount >= 0.01 && usdAmount <= maxTransactionAmount
 
     // saved transactions and history feedback
     const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -334,6 +378,9 @@ function App() {
     const resetTransaction = () => {
         setAmount('')
         setAmountSign(-1)
+        setCurrency('USD')
+        setRate(null)
+        setRateError('')
         setTransactionName('')
         setTransactionType(transactionTypes[0])
         setTransactionDate('')
@@ -348,8 +395,12 @@ function App() {
             setMessage('Please log in to save transactions. Skipping login only previews the form.')
             return
         }
-        if (!transactionName.trim() || !transactionDate || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+        if (!transactionName.trim() || !transactionDate || !Number.isFinite(numericAmount) || numericAmount <= 0) {
             setMessage('Enter a name, date, and amount greater than zero.')
+            return
+        }
+        if (!validUsdAmount) {
+            setMessage('The USD amount must be between $0.01 and $9,999,999,999.99.')
             return
         }
         setIsSaving(true)
@@ -362,7 +413,7 @@ function App() {
                 body: JSON.stringify({
                     name: transactionName.trim(),
                     type: transactionType,
-                    amount: amountSign * Number(amount),
+                    amount: amountSign * usdAmount,
                     date: transactionDate,
                     description: transactionDescription.trim() || null,
                     recurring,
@@ -612,32 +663,58 @@ function App() {
                                         <input id="transaction-name" required maxLength={50} placeholder="e.g. Weekly groceries"
                                             value={transactionName} onChange={(event) => setTransactionName(event.target.value)} />
                                     </label>
+                                    <label htmlFor="transaction-date">Date
+                                        <input id="transaction-date" type="date" required value={transactionDate}
+                                            onChange={(event) => setTransactionDate(event.target.value)} />
+                                    </label>
                                     <label htmlFor="transaction-type">Transaction type
                                         <select id="transaction-type" value={transactionType}
                                             onChange={(event) => setTransactionType(event.target.value)}>
                                             {transactionTypes.map((type) => <option key={type} value={type}>{type}</option>)}
                                         </select>
                                     </label>
-                                    <div className="transaction-field">
-                                        <label htmlFor="transaction-amount">Amount ($)</label>
+                                    <div className="transaction-field transaction-amount-field">
+                                        <label htmlFor="transaction-amount">Amount</label>
                                         <div className="amount-control">
                                             <button type="button" className="amount-sign" aria-pressed={amountSign === 1}
                                                 aria-label="Add to balance" aria-describedby="amount-direction"
                                                 onClick={() => setAmountSign((sign) => sign === -1 ? 1 : -1)}>
                                                 {amountSign === -1 ? '−' : '+'}
                                             </button>
-                                            <input id="transaction-amount" type="number" required min="0.01" max="9999999999.99"
+                                            <input id="transaction-amount" type="number" required min="0.01"
+                                                max={currency === 'USD' ? maxTransactionAmount : undefined}
                                                 step="0.01" placeholder="0.00" aria-describedby="amount-direction"
                                                 value={amount} onChange={(event) => setAmount(event.target.value)} />
+                                            <select aria-label="Transaction currency" value={currency}
+                                                onChange={(event) => {
+                                                    setRate(null)
+                                                    setRateError('')
+                                                    setCurrency(event.target.value)
+                                                }}>
+                                                <option value="USD">US Dollar ($)</option>
+                                                {currencies.map(({ iso_code, name }) =>
+                                                    <option key={iso_code} value={iso_code}>{name} ({iso_code})</option>)}
+                                            </select>
                                         </div>
                                         <small id="amount-direction" aria-live="polite">
                                             {amountSign === -1 ? 'Subtract from balance' : 'Add to balance'} · Click −/+ to switch
                                         </small>
+                                        {currency !== 'USD' && (
+                                            <small role="status">
+                                                {rateError || (usdAmount === null ? 'Loading exchange rate…'
+                                                    : numericAmount > 0 && Number.isFinite(usdAmount)
+                                                        ? `USD equivalent: ${usdFormatter.format(amountSign * usdAmount)}` : '')}
+                                            </small>
+                                        )}
+                                        {currencyError && <small role="status">{currencyError}</small>}
+                                        {(currencyError || rateError) && (
+                                            <button type="button" onClick={() => {
+                                                setCurrencyError('')
+                                                setRateError('')
+                                                setCurrencyRetry((value) => value + 1)
+                                            }}>Retry currency rates</button>
+                                        )}
                                     </div>
-                                    <label htmlFor="transaction-date">Date
-                                        <input id="transaction-date" type="date" required value={transactionDate}
-                                            onChange={(event) => setTransactionDate(event.target.value)} />
-                                    </label>
                                     <div className="transaction-description" style={{ display: 'flex', alignItems: 'end', gap: '16px' }}>
                                         <label htmlFor="transaction-description" style={{ flex: 1 }}>Description (optional)
                                             <textarea id="transaction-description" rows={3} maxLength={250} placeholder="Add a note"
@@ -650,7 +727,9 @@ function App() {
                                         </label>
                                     </div>
                                 </div>
-                                <button type="submit">{isSaving ? 'Saving...' : 'Save transaction'}</button>
+                                <button type="submit" disabled={currency !== 'USD' && usdAmount === null}>
+                                    {isSaving ? 'Saving...' : 'Save transaction'}
+                                </button>
                             </fieldset>
                         </form>
 

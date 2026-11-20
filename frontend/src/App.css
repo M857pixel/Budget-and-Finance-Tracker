@@ -204,6 +204,19 @@ sup {
   margin-bottom: 20px;
 }
 
+.transaction-add .transaction-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.transaction-amount-field {
+  grid-column: 1 / -1;
+  max-width: 36rem;
+}
+
+.transaction-amount-field .amount-control select {
+  width: 48%;
+}
+
 .transaction-fields label,
 .transaction-field {
   display: grid;
@@ -295,6 +308,10 @@ sup {
 }
 
 @media (max-width: 640px) {
+  .transaction-add .transaction-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .dashboard {
     width: 100%;
     padding: 16px;
