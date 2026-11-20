@@ -230,7 +230,24 @@ function App() {
         setSummaryRefresh((value) => value + 1)
     }
     const [deleteError, setDeleteError] = useState('')
+    const [recurringError, setRecurringError] = useState('')
+    const [updatingRecurringId, setUpdatingRecurringId] = useState<number | null>(null)
     const [deletingTransactionId, setDeletingTransactionId] = useState<number | null>(null)
+
+    const updateRecurring = async (transaction: Transaction, repeatsMonthly: boolean) => {
+        if (transaction.userId !== currentUserId || updatingRecurringId !== null) return
+        setUpdatingRecurringId(transaction.transactionId)
+        setRecurringError('')
+        try {
+            await saveTransactionField(transaction, { recurring: repeatsMonthly })
+            setTransactions((current) => current.map((saved) => saved.transactionId === transaction.transactionId
+                ? { ...saved, recurring: repeatsMonthly } : saved))
+        } catch {
+            setRecurringError('Could not update monthly recurrence. Please try again.')
+        } finally {
+            setUpdatingRecurringId(null)
+        }
+    }
 
     const deleteTransaction = async (transactionId: number) => {
         if (currentUserId === null || deletingTransactionId !== null) return
@@ -606,6 +623,7 @@ function App() {
                 setTransactions([])
                 setHistoryError('')
                 setDeleteError('')
+                setRecurringError('')
                 setCurrentUserId(null)
                 setCurrentUserName('')
                 setIsLoggedIn(false)
@@ -635,7 +653,10 @@ function App() {
                 </button>
                 <button
                     className={activeTab === 'history' ? 'active' : ''}
-                    onClick={() => setActiveTab('history')}
+                    onClick={() => {
+                        historyCatalogCache.current = null
+                        setActiveTab('history')
+                    }}
                 >
                     Transaction History
                 </button>
@@ -723,7 +744,7 @@ function App() {
                                         <label htmlFor="transaction-recurring" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
                                             <input id="transaction-recurring" type="checkbox" checked={recurring}
                                                 onChange={(event) => setRecurring(event.target.checked)} style={{ width: 'auto' }} />
-                                            Recurring
+                                            Repeat monthly
                                         </label>
                                     </div>
                                 </div>
@@ -767,6 +788,7 @@ function App() {
                             </label>
                         </div>}
                         {deleteError && <p role="alert">{deleteError}</p>}
+                        {recurringError && <p role="alert">{recurringError}</p>}
                         {currentUserId === null ? <p>Please log in to view your saved transactions.</p>
                             : isLoadingHistory || isLoadingHistoryCatalog ? <p role="status">Loading transactions...</p>
                             : historyError ? <p role="alert">{historyError}</p>
@@ -778,7 +800,7 @@ function App() {
                                     <thead><tr>
                                         <th scope="col">Name</th><th scope="col">Transaction type</th>
                                         <th scope="col">Amount</th><th scope="col">Date</th><th scope="col">Description</th>
-                                        <th scope="col">Recurring</th>
+                                        <th scope="col">Repeat monthly</th>
                                         <th scope="col" aria-label="Actions" />
                                     </tr></thead>
                                     <tbody>{transactions.map((transaction) => (
@@ -802,15 +824,14 @@ function App() {
                                                 onSave={(description) => saveTransactionField(transaction, { description })}>
                                                 {transaction.description || '—'}
                                             </TransactionField></td>
-                                            <td><TransactionField label="Recurring status" kind="recurring" value={transaction.recurring ? 'Yes' : 'No'}
-                                                options={['Yes', 'No']}
-                                                onSave={(value) => saveTransactionField(transaction, { recurring: value === 'Yes' })}>
-                                                {transaction.recurring ? 'Yes' : 'No'}
-                                            </TransactionField></td>
+                                            <td><input type="checkbox" checked={transaction.recurring}
+                                                aria-label={`Repeat ${transaction.name} monthly`}
+                                                disabled={updatingRecurringId !== null || deletingTransactionId === transaction.transactionId}
+                                                onChange={(event) => void updateRecurring(transaction, event.target.checked)} /></td>
                                             <td className="transaction-actions">
                                                 <button type="button" className="transaction-delete"
                                                     aria-label={`Delete ${transaction.name}`} title="Delete transaction"
-                                                    disabled={deletingTransactionId !== null}
+                                                    disabled={deletingTransactionId !== null || updatingRecurringId === transaction.transactionId}
                                                     aria-busy={deletingTransactionId === transaction.transactionId}
                                                     onClick={() => void deleteTransaction(transaction.transactionId)}>
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"

@@ -178,7 +178,7 @@ public class LedgerController {
                 request.amount(),
                 request.date(),
                 request.description(),
-                request.recurring()
+                Boolean.TRUE.equals(request.recurring())
         ));
         return toResponse(saved);
     }
@@ -264,12 +264,13 @@ public class LedgerController {
     Update only the supplied details of a transaction owned by this user
     @Returns: TransactionResponse (Contains: transactionID, userID, name, type, amount, date, description, recurring)
     */
+    @Transactional
     @PatchMapping("/users/{userId}/transactions/{transactionId}")
     public TransactionResponse updateTransaction(@PathVariable Long userId,
                                                  @PathVariable Long transactionId,
                                                  @RequestBody UpdateTransactionRequest request, HttpServletRequest httpRequest) {
         requireUser(userId, httpRequest);
-        Transaction transaction = transactionRepository.findByUser_UserIdAndTransactionId(userId, transactionId)
+        Transaction transaction = transactionRepository.lockOwnedTransaction(userId, transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transaction not found"));
 
         BigDecimal amount = request.amount();
@@ -341,7 +342,7 @@ public class LedgerController {
     public record UserResponse(Long userId, String email, String firstName,
                                String lastName, BigDecimal balance) {}
     public record CreateTransactionRequest(String name, String type, BigDecimal amount,
-                                           LocalDate date, String description, boolean recurring) {}
+                                           LocalDate date, String description, Boolean recurring) {}
     public record UpdateTransactionRequest(String name, String type, BigDecimal amount,
                                            LocalDate date, String description, Boolean recurring) {}
     public record TransactionResponse(Long transactionId, Long userId, String name, String type,
