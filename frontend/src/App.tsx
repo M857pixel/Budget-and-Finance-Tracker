@@ -3,11 +3,26 @@ import AccountRecovery from './AccountRecovery'
 import AssistantChat from './AssistantChat'
 import MonthlySummary from './MonthlySummary'
 import TransactionAmount from './TransactionAmount'
+import TransactionField from './TransactionField'
 import { useEffect, useRef, useState } from 'react'
 import CurrencyConverter from './CurrencyConverter'
 
 // array of selectable transaction types
-const transactionTypes = ['Clothing', 'Entertainment', 'Transport', 'Groceries', 'Salary', 'Rent', 'Other' ]
+const transactionTypes = ['Housing',
+    'Utilities',
+'Groceries',
+'Dining',
+'Transportation',
+'Car Expenses',
+'Insurance',
+'Healthcare',
+'Debt Payments',
+'Phone & Internet',
+'Subscriptions',
+'Personal & Household',
+'Clothing',
+'Entertainment',
+'Income', ]
 const transactionMonths = [
     { value: '01', label: 'January' },
     { value: '02', label: 'February' },
@@ -160,6 +175,16 @@ function App() {
     const [transactions, setTransactions] = useState<Transaction[]>([])
     const [historyCatalog, setHistoryCatalog] = useState<Transaction[]>([])
     const [historyError, setHistoryError] = useState('')
+
+    const saveTransactionField = async (transaction: Transaction,
+        update: Partial<Pick<Transaction, 'name' | 'type' | 'date' | 'description' | 'recurring'>>) => {
+        const response = await fetch(`http://${window.location.hostname}:8080/api/users/${transaction.userId}/transactions/${transaction.transactionId}`, {
+            method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(update),
+        })
+        if (!response.ok) throw new Error('Could not update transaction.')
+        setSummaryRefresh((value) => value + 1)
+    }
     const [deleteError, setDeleteError] = useState('')
     const [deletingTransactionId, setDeletingTransactionId] = useState<number | null>(null)
 
@@ -679,17 +704,30 @@ function App() {
                                     </tr></thead>
                                     <tbody>{transactions.map((transaction) => (
                                         <tr key={transaction.transactionId}>
-                                            <td>{transaction.name}</td>
-                                            <td>{transaction.type}</td>
+                                            <td><TransactionField label="Transaction name" kind="name" value={transaction.name}
+                                                onSave={(name) => saveTransactionField(transaction, { name })}>{transaction.name}</TransactionField></td>
+                                            <td><TransactionField label="Transaction type" kind="type" value={transaction.type}
+                                                options={[...new Set([transaction.type, ...transactionTypes, ...historyTypes])]}
+                                                onSave={(type) => saveTransactionField(transaction, { type })}>{transaction.type}</TransactionField></td>
                                             <td><TransactionAmount userId={transaction.userId} transactionId={transaction.transactionId}
                                                 amount={transaction.amount} onSaved={(amount) => {
                                                     setTransactions((current) => current.map((saved) => saved.transactionId === transaction.transactionId
                                                         ? { ...saved, amount } : saved))
                                                     setSummaryRefresh((value) => value + 1)
                                                 }} /></td>
-                                            <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
-                                            <td>{transaction.description || '—'}</td>
-                                            <td>{transaction.recurring ? 'Yes' : 'No'}</td>
+                                            <td><TransactionField label="Transaction date" kind="date" value={transaction.date}
+                                                onSave={(date) => saveTransactionField(transaction, { date })}>
+                                                <time dateTime={transaction.date}>{displayDate(transaction.date)}</time>
+                                            </TransactionField></td>
+                                            <td><TransactionField label="Transaction description" kind="description" value={transaction.description ?? ''}
+                                                onSave={(description) => saveTransactionField(transaction, { description })}>
+                                                {transaction.description || '—'}
+                                            </TransactionField></td>
+                                            <td><TransactionField label="Recurring status" kind="recurring" value={transaction.recurring ? 'Yes' : 'No'}
+                                                options={['Yes', 'No']}
+                                                onSave={(value) => saveTransactionField(transaction, { recurring: value === 'Yes' })}>
+                                                {transaction.recurring ? 'Yes' : 'No'}
+                                            </TransactionField></td>
                                             <td className="transaction-actions">
                                                 <button type="button" className="transaction-delete"
                                                     aria-label={`Delete ${transaction.name}`} title="Delete transaction"

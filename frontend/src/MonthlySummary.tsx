@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EditableAmount from './EditableAmount'
 import useEditableAmount from './useEditableAmount'
 
@@ -70,6 +70,29 @@ export default function MonthlySummary({ userId, refresh }: { userId: number; re
     }, [userId, month, refresh, request])
 
     const current = result?.request === request ? result : null
+    const cards = useRef<HTMLDivElement>(null)
+
+    useLayoutEffect(() => {
+        const grid = cards.current
+        if (!grid) return
+        const fitValues = () => {
+            for (const value of grid.querySelectorAll<HTMLElement>('.summary-value, .budget-value')) {
+                value.style.removeProperty('--summary-fitted-size')
+                const label = value.firstElementChild
+                if (!label) continue
+                const overflow = label.scrollWidth - label.clientWidth
+                if (overflow <= 0 || value.clientWidth === 0) continue
+                const size = parseFloat(getComputedStyle(value).fontSize)
+                const fittedSize = size * value.clientWidth / (value.clientWidth + overflow + 1)
+                value.style.setProperty('--summary-fitted-size', `${fittedSize}px`)
+            }
+        }
+
+        fitValues()
+        const observer = new ResizeObserver(fitValues)
+        observer.observe(grid)
+        return () => observer.disconnect()
+    }, [budget?.amount, budget?.error, current?.total, current?.error, editor.editing])
 
     return (
         <section className="monthly-summary" aria-label="Monthly overview">
@@ -77,19 +100,19 @@ export default function MonthlySummary({ userId, refresh }: { userId: number; re
                 <input id="summary-month" type="month" required value={month} disabled={editor.saving}
                     onChange={(event) => { if (event.target.value) setMonth(event.target.value) }} />
             </label>
-            <div className="summary-cards">
+            <div className="summary-cards" ref={cards}>
                 <div className="summary-card"><h2>Monthly Budget</h2>
                     <EditableAmount editor={editor} label="Monthly budget" amount={budget?.amount} error={budget?.error} />
                 </div>
                 <div className="summary-card"><h2>Monthly Total</h2>
-                    <p role="status">{current?.total !== undefined
+                    <p className="summary-value" role="status"><span>{current?.total !== undefined
                         ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(current.total)
-                        : current?.error ? 'Unavailable' : 'Loading...'}</p>
+                        : current?.error ? 'Unavailable' : 'Loading...'}</span></p>
                 </div>
                 <div className="summary-card"><h2>Remaining</h2>
-                    <p role="status">{budget?.amount !== undefined && current?.total !== undefined
+                    <p className="summary-value" role="status"><span>{budget?.amount !== undefined && current?.total !== undefined
                         ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(budget.amount + current.total)
-                        : budget?.error || current?.error ? 'Unavailable' : 'Loading...'}</p>
+                        : budget?.error || current?.error ? 'Unavailable' : 'Loading...'}</span></p>
                 </div>
             </div>
             {current?.error && <p role="alert">{current.error}</p>}
