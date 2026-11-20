@@ -2,6 +2,7 @@ package com.pocketledger.controller;
 
 import com.pocketledger.model.Transaction;
 import com.pocketledger.model.User;
+import com.pocketledger.repository.MonthlyBudgetRepository;
 import com.pocketledger.repository.TransactionRepository;
 import com.pocketledger.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ class LedgerControllerTest {
     @Autowired MockMvc mvc;
     // Replace database repositories with Mockito mocks whose behavior each test controls.
     @MockitoBean UserRepository users;
+    @MockitoBean MonthlyBudgetRepository monthlyBudgets;
     @MockitoBean TransactionRepository transactions;
     // Shared example of the JSON the frontend sends when adding an expense.
     private static final String BODY = """
@@ -51,7 +53,8 @@ class LedgerControllerTest {
                 .andExpect(jsonPath("$.type").value("Groceries"))
                 .andExpect(jsonPath("$.amount").value(-12.34))
                 .andExpect(jsonPath("$.date").value("2026-10-19"))
-                .andExpect(jsonPath("$.description").value("Weekly shopping"));
+                .andExpect(jsonPath("$.description").value("Weekly shopping"))
+                .andExpect(jsonPath("$.recurring").value(false));
     }
 
     // History requests must use the repository query scoped to the logged-in user.
@@ -111,7 +114,7 @@ class LedgerControllerTest {
         when(user.getUserId()).thenReturn(7L);
         var transaction = new Transaction(user, "Groceries", "Food", new java.math.BigDecimal("-12.34"),
                 java.time.LocalDate.of(2026, 11, 2), "Weekly shopping");
-        when(transactions.findByUser_UserIdAndTransactionId(7L, 42L)).thenReturn(Optional.of(transaction));
+        when(transactions.lockOwnedTransaction(7L, 42L)).thenReturn(Optional.of(transaction));
         when(transactions.save(any(Transaction.class))).thenAnswer(call -> call.getArgument(0));
         when(transactions.findByUser_UserIdOrderByTransactionDateDesc(7L)).thenReturn(java.util.List.of(transaction));
         for (String amount : new String[]{"-25.50", "25.50", "0"}) {
@@ -127,6 +130,23 @@ class LedgerControllerTest {
                     .andExpect(content().string(amount));
         }
         verify(transactions, times(3)).save(transaction);
+    }
+
+    @Test
+    void togglesMonthlyRecurrenceOnAndOff() throws Exception {
+        User user = mock(User.class);
+        when(user.getUserId()).thenReturn(7L);
+        var transaction = new Transaction(user, "Rent", "Rent", new java.math.BigDecimal("-1200.00"),
+                java.time.LocalDate.of(2026, 11, 2), null);
+        when(transactions.lockOwnedTransaction(7L, 42L)).thenReturn(Optional.of(transaction));
+        when(transactions.save(any(Transaction.class))).thenAnswer(call -> call.getArgument(0));
+
+        for (boolean enabled : new boolean[]{true, false}) {
+            mvc.perform(patch("/api/users/7/transactions/42").sessionAttr("userId", 7L)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"recurring\":" + enabled + "}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.recurring").value(enabled));
+        }
     }
 
     @Test
@@ -147,7 +167,7 @@ class LedgerControllerTest {
     void rejectsInvalidAmountsWithoutChangingTheTransaction() throws Exception {
         var transaction = new Transaction(mock(User.class), "Groceries", "Food", new java.math.BigDecimal("12.34"),
                 java.time.LocalDate.of(2026, 11, 2), null);
-        when(transactions.findByUser_UserIdAndTransactionId(7L, 42L)).thenReturn(Optional.of(transaction));
+        when(transactions.lockOwnedTransaction(7L, 42L)).thenReturn(Optional.of(transaction));
         for (String amount : new String[]{"1.001", "-1.001", "10000000000", "-10000000000", "\"NaN\"", "\"Infinity\"", "\"abc\""}) {
             mvc.perform(patch("/api/users/7/transactions/42").sessionAttr("userId", 7L)
                             .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":" + amount + "}"))

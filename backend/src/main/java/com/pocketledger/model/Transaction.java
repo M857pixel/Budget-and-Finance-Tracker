@@ -24,9 +24,13 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import org.hibernate.annotations.DynamicUpdate;
+
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 
 @Entity
+@DynamicUpdate
 @Table(name = "transactions")
 public class Transaction {
 
@@ -54,8 +58,17 @@ public class Transaction {
     @Column(name = "transaction_description", length = 250)
     private String transactionDescription;
 
-    @Column(name = "recurring_transaction")
+    @Column(name = "recurring_transaction", nullable = false)
     private boolean recurringTransaction;
+
+    @Column(name = "recurring_next_date")
+    private LocalDate recurringNextDate;
+
+    @Column(name = "recurring_source_id", updatable = false)
+    private Long recurringSourceId;
+
+    @Column(name = "recurring_occurrence_date", updatable = false)
+    private LocalDate recurringOccurrenceDate;
 
     //JPA needs a no argument constructor to create transactions when reading rows
     protected Transaction() {}
@@ -79,6 +92,7 @@ public class Transaction {
         this.transactionDate = transactionDate;
         this.transactionDescription = transactionDescription;
         this.recurringTransaction = recurringTransaction;
+        if (recurringTransaction) this.recurringNextDate = LocalDate.now(ZoneOffset.UTC);
     }
 
     //Getters
@@ -91,6 +105,20 @@ public class Transaction {
     public String getTransactionDescription() { return transactionDescription; }
     public boolean getRecurringTransaction() { return recurringTransaction; }
 
+    public LocalDate getRecurringNextDate() { return recurringNextDate; }
+
+    public void advanceRecurringDate(LocalDate nextDate) {
+        recurringNextDate = nextDate;
+    }
+
+    public Transaction createRecurringOccurrence(LocalDate date) {
+        Transaction occurrence = new Transaction(user, transactionName, transactionType,
+                transactionAmount, date, transactionDescription);
+        occurrence.recurringSourceId = transactionId;
+        occurrence.recurringOccurrenceDate = date;
+        return occurrence;
+    }
+
     //Apply supplied fields only; null values leave existing fields unchanged.
     public void updateDetails(String transactionName, String transactionType,
                               BigDecimal transactionAmount, LocalDate transactionDate,
@@ -98,8 +126,13 @@ public class Transaction {
         if (transactionName != null) this.transactionName = transactionName;
         if (transactionType != null) this.transactionType = transactionType;
         if (transactionAmount != null) this.transactionAmount = transactionAmount;
-        if (transactionDate != null) this.transactionDate = transactionDate;
+        boolean dateChanged = transactionDate != null && !transactionDate.equals(this.transactionDate);
+        if (dateChanged) this.transactionDate = transactionDate;
         if (transactionDescription != null) this.transactionDescription = transactionDescription;
-        if (recurringTransaction != null) this.recurringTransaction = recurringTransaction;
+        boolean recurringChanged = recurringTransaction != null && recurringTransaction != this.recurringTransaction;
+        if (recurringChanged) this.recurringTransaction = recurringTransaction;
+        if (recurringChanged || (dateChanged && this.recurringTransaction)) {
+            recurringNextDate = this.recurringTransaction ? LocalDate.now(ZoneOffset.UTC) : null;
+        }
     }
 }

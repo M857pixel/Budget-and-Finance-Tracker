@@ -161,7 +161,31 @@ function App() {
     const [historyCatalog, setHistoryCatalog] = useState<Transaction[]>([])
     const [historyError, setHistoryError] = useState('')
     const [deleteError, setDeleteError] = useState('')
+    const [recurringError, setRecurringError] = useState('')
+    const [updatingRecurringId, setUpdatingRecurringId] = useState<number | null>(null)
     const [deletingTransactionId, setDeletingTransactionId] = useState<number | null>(null)
+
+    const updateRecurring = async (transactionId: number, repeatsMonthly: boolean) => {
+        if (currentUserId === null || updatingRecurringId !== null) return
+        setUpdatingRecurringId(transactionId)
+        setRecurringError('')
+        try {
+            const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions/${transactionId}`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recurring: repeatsMonthly }),
+            })
+            if (!response.ok) throw new Error('Could not update monthly recurrence. Please try again.')
+            setTransactions((current) => current.map((transaction) => transaction.transactionId === transactionId
+                ? { ...transaction, recurring: repeatsMonthly } : transaction))
+            setSummaryRefresh((value) => value + 1)
+        } catch {
+            setRecurringError('Could not update monthly recurrence. Please try again.')
+        } finally {
+            setUpdatingRecurringId(null)
+        }
+    }
 
     const deleteTransaction = async (transactionId: number) => {
         if (currentUserId === null || deletingTransactionId !== null) return
@@ -530,6 +554,7 @@ function App() {
                 setTransactions([])
                 setHistoryError('')
                 setDeleteError('')
+                setRecurringError('')
                 setCurrentUserId(null)
                 setCurrentUserName('')
                 setIsLoggedIn(false)
@@ -559,7 +584,10 @@ function App() {
                 </button>
                 <button
                     className={activeTab === 'history' ? 'active' : ''}
-                    onClick={() => setActiveTab('history')}
+                    onClick={() => {
+                        historyCatalogCache.current = null
+                        setActiveTab('history')
+                    }}
                 >
                     Transaction History
                 </button>
@@ -621,7 +649,7 @@ function App() {
                                         <label htmlFor="transaction-recurring" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
                                             <input id="transaction-recurring" type="checkbox" checked={recurring}
                                                 onChange={(event) => setRecurring(event.target.checked)} style={{ width: 'auto' }} />
-                                            Recurring
+                                            Repeat monthly
                                         </label>
                                     </div>
                                 </div>
@@ -663,6 +691,7 @@ function App() {
                             </label>
                         </div>}
                         {deleteError && <p role="alert">{deleteError}</p>}
+                        {recurringError && <p role="alert">{recurringError}</p>}
                         {currentUserId === null ? <p>Please log in to view your saved transactions.</p>
                             : isLoadingHistory || isLoadingHistoryCatalog ? <p role="status">Loading transactions...</p>
                             : historyError ? <p role="alert">{historyError}</p>
@@ -674,7 +703,7 @@ function App() {
                                     <thead><tr>
                                         <th scope="col">Name</th><th scope="col">Transaction type</th>
                                         <th scope="col">Amount</th><th scope="col">Date</th><th scope="col">Description</th>
-                                        <th scope="col">Recurring</th>
+                                        <th scope="col">Repeat monthly</th>
                                         <th scope="col" aria-label="Actions" />
                                     </tr></thead>
                                     <tbody>{transactions.map((transaction) => (
@@ -689,11 +718,14 @@ function App() {
                                                 }} /></td>
                                             <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
                                             <td>{transaction.description || '—'}</td>
-                                            <td>{transaction.recurring ? 'Yes' : 'No'}</td>
+                                            <td><input type="checkbox" checked={transaction.recurring}
+                                                aria-label={`Repeat ${transaction.name} monthly`}
+                                                disabled={updatingRecurringId !== null || deletingTransactionId === transaction.transactionId}
+                                                onChange={(event) => void updateRecurring(transaction.transactionId, event.target.checked)} /></td>
                                             <td className="transaction-actions">
                                                 <button type="button" className="transaction-delete"
                                                     aria-label={`Delete ${transaction.name}`} title="Delete transaction"
-                                                    disabled={deletingTransactionId !== null}
+                                                    disabled={deletingTransactionId !== null || updatingRecurringId === transaction.transactionId}
                                                     aria-busy={deletingTransactionId === transaction.transactionId}
                                                     onClick={() => void deleteTransaction(transaction.transactionId)}>
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
