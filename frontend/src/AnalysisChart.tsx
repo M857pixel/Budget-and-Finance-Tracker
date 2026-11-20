@@ -29,10 +29,10 @@ export default function AnalysisChart({ result, chart }: { result: AnalysisResul
                     </Pie>
                     <Tooltip content={ChartTooltipContent} />
                 </PieChart> : chart === 'bar' ? <BarChart data={data} margin={{ left: 4, right: 12, bottom: 24 }}>
-                    <CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis width={65} tick={{ fontSize: 11 }} />
+                    <CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="label" /><YAxis width={65} />
                     <Tooltip content={ChartTooltipContent} /><Bar dataKey="value" name="Amount" fill={colors[0]} radius={[4, 4, 0, 0]} isAnimationActive={false} />
                 </BarChart> : <LineChart data={data} margin={{ left: 4, right: 12, bottom: 24 }}>
-                    <CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis width={65} tick={{ fontSize: 11 }} />
+                    <CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="label" /><YAxis width={65} />
                     <Tooltip content={ChartTooltipContent} /><Line type="linear" dataKey="value" name="Amount" stroke={colors[0]} strokeWidth={2} activeDot={<ChartActiveDot />} isAnimationActive={false} />
                 </LineChart>}
             </ResponsiveContainer>

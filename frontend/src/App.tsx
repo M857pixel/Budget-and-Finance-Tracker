@@ -3,11 +3,30 @@ import AccountRecovery from './AccountRecovery'
 import AssistantChat from './AssistantChat'
 import MonthlySummary from './MonthlySummary'
 import TransactionAmount from './TransactionAmount'
+import TransactionField from './TransactionField'
 import { useEffect, useRef, useState } from 'react'
 import CurrencyConverter from './CurrencyConverter'
+import { loadCurrencies, loadExchangeRate, type Currency, type ExchangeRate } from './exchangeRates'
+
+const maxTransactionAmount = 9_999_999_999.99
+const usdFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
 // array of selectable transaction types
-const transactionTypes = ['Clothing', 'Entertainment', 'Transport', 'Groceries', 'Salary', 'Rent', 'Other' ]
+const transactionTypes = ['Housing',
+    'Utilities',
+'Groceries',
+'Dining',
+'Transportation',
+'Car Expenses',
+'Insurance',
+'Healthcare',
+'Debt Payments',
+'Phone & Internet',
+'Subscriptions',
+'Personal & Household',
+'Clothing',
+'Entertainment',
+'Income', ]
 const transactionMonths = [
     { value: '01', label: 'January' },
     { value: '02', label: 'February' },
@@ -142,6 +161,12 @@ function App() {
     const [message, setMessage] = useState('')
     const [amount, setAmount] = useState('')
     const [amountSign, setAmountSign] = useState<-1 | 1>(-1)
+    const [currency, setCurrency] = useState('USD')
+    const [currencies, setCurrencies] = useState<Currency[]>([])
+    const [rate, setRate] = useState<ExchangeRate | null>(null)
+    const [currencyError, setCurrencyError] = useState('')
+    const [rateError, setRateError] = useState('')
+    const [currencyRetry, setCurrencyRetry] = useState(0)
     const [transactionName, setTransactionName] = useState('')
     const [transactionType, setTransactionType] = useState(transactionTypes[0])
     const [transactionDate, setTransactionDate] = useState('')
@@ -156,30 +181,67 @@ function App() {
     }, [])
     const [activeTab, setActiveTab] = useState<'add' | 'currency' | 'history' | 'import'>('add')
 
+    useEffect(() => {
+        if (!isLoggedIn || activeTab !== 'add') return
+        const controller = new AbortController()
+        void loadCurrencies(controller.signal).then((available) => {
+            if (!controller.signal.aborted) {
+                setCurrencies(available)
+                setCurrencyError('')
+            }
+        }).catch(() => {
+            if (!controller.signal.aborted) setCurrencyError('Could not load foreign currencies.')
+        })
+        return () => controller.abort()
+    }, [activeTab, isLoggedIn, currencyRetry])
+
+    useEffect(() => {
+        if (activeTab !== 'add' || currency === 'USD') return
+        const controller = new AbortController()
+        void loadExchangeRate(currency, controller.signal).then((quote) => {
+            if (!controller.signal.aborted) {
+                setRate(quote)
+                setRateError('')
+            }
+        }).catch(() => {
+            if (!controller.signal.aborted) setRateError('Could not load the exchange rate.')
+        })
+        return () => controller.abort()
+    }, [activeTab, currency, currencyRetry])
+
+    const currentRate = rate?.quote === currency ? rate.rate : null
+    const numericAmount = Number(amount)
+    const usdAmount = currency === 'USD' ? numericAmount
+        : currentRate === null ? null : Number((numericAmount / currentRate).toFixed(2))
+    const validUsdAmount = usdAmount !== null && usdAmount >= 0.01 && usdAmount <= maxTransactionAmount
+
     // saved transactions and history feedback
     const [transactions, setTransactions] = useState<Transaction[]>([])
     const [historyCatalog, setHistoryCatalog] = useState<Transaction[]>([])
     const [historyError, setHistoryError] = useState('')
+
+    const saveTransactionField = async (transaction: Transaction,
+        update: Partial<Pick<Transaction, 'name' | 'type' | 'date' | 'description' | 'recurring'>>) => {
+        const response = await fetch(`http://${window.location.hostname}:8080/api/users/${transaction.userId}/transactions/${transaction.transactionId}`, {
+            method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(update),
+        })
+        if (!response.ok) throw new Error('Could not update transaction.')
+        setSummaryRefresh((value) => value + 1)
+    }
     const [deleteError, setDeleteError] = useState('')
     const [recurringError, setRecurringError] = useState('')
     const [updatingRecurringId, setUpdatingRecurringId] = useState<number | null>(null)
     const [deletingTransactionId, setDeletingTransactionId] = useState<number | null>(null)
 
-    const updateRecurring = async (transactionId: number, repeatsMonthly: boolean) => {
-        if (currentUserId === null || updatingRecurringId !== null) return
-        setUpdatingRecurringId(transactionId)
+    const updateRecurring = async (transaction: Transaction, repeatsMonthly: boolean) => {
+        if (transaction.userId !== currentUserId || updatingRecurringId !== null) return
+        setUpdatingRecurringId(transaction.transactionId)
         setRecurringError('')
         try {
-            const response = await fetch(`http://${window.location.hostname}:8080/api/users/${currentUserId}/transactions/${transactionId}`, {
-                method: 'PATCH',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ recurring: repeatsMonthly }),
-            })
-            if (!response.ok) throw new Error('Could not update monthly recurrence. Please try again.')
-            setTransactions((current) => current.map((transaction) => transaction.transactionId === transactionId
-                ? { ...transaction, recurring: repeatsMonthly } : transaction))
-            setSummaryRefresh((value) => value + 1)
+            await saveTransactionField(transaction, { recurring: repeatsMonthly })
+            setTransactions((current) => current.map((saved) => saved.transactionId === transaction.transactionId
+                ? { ...saved, recurring: repeatsMonthly } : saved))
         } catch {
             setRecurringError('Could not update monthly recurrence. Please try again.')
         } finally {
@@ -333,6 +395,9 @@ function App() {
     const resetTransaction = () => {
         setAmount('')
         setAmountSign(-1)
+        setCurrency('USD')
+        setRate(null)
+        setRateError('')
         setTransactionName('')
         setTransactionType(transactionTypes[0])
         setTransactionDate('')
@@ -347,8 +412,12 @@ function App() {
             setMessage('Please log in to save transactions. Skipping login only previews the form.')
             return
         }
-        if (!transactionName.trim() || !transactionDate || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+        if (!transactionName.trim() || !transactionDate || !Number.isFinite(numericAmount) || numericAmount <= 0) {
             setMessage('Enter a name, date, and amount greater than zero.')
+            return
+        }
+        if (!validUsdAmount) {
+            setMessage('The USD amount must be between $0.01 and $9,999,999,999.99.')
             return
         }
         setIsSaving(true)
@@ -361,7 +430,7 @@ function App() {
                 body: JSON.stringify({
                     name: transactionName.trim(),
                     type: transactionType,
-                    amount: amountSign * Number(amount),
+                    amount: amountSign * usdAmount,
                     date: transactionDate,
                     description: transactionDescription.trim() || null,
                     recurring,
@@ -615,32 +684,58 @@ function App() {
                                         <input id="transaction-name" required maxLength={50} placeholder="e.g. Weekly groceries"
                                             value={transactionName} onChange={(event) => setTransactionName(event.target.value)} />
                                     </label>
+                                    <label htmlFor="transaction-date">Date
+                                        <input id="transaction-date" type="date" required value={transactionDate}
+                                            onChange={(event) => setTransactionDate(event.target.value)} />
+                                    </label>
                                     <label htmlFor="transaction-type">Transaction type
                                         <select id="transaction-type" value={transactionType}
                                             onChange={(event) => setTransactionType(event.target.value)}>
                                             {transactionTypes.map((type) => <option key={type} value={type}>{type}</option>)}
                                         </select>
                                     </label>
-                                    <div className="transaction-field">
-                                        <label htmlFor="transaction-amount">Amount ($)</label>
+                                    <div className="transaction-field transaction-amount-field">
+                                        <label htmlFor="transaction-amount">Amount</label>
                                         <div className="amount-control">
                                             <button type="button" className="amount-sign" aria-pressed={amountSign === 1}
                                                 aria-label="Add to balance" aria-describedby="amount-direction"
                                                 onClick={() => setAmountSign((sign) => sign === -1 ? 1 : -1)}>
                                                 {amountSign === -1 ? '−' : '+'}
                                             </button>
-                                            <input id="transaction-amount" type="number" required min="0.01" max="9999999999.99"
+                                            <input id="transaction-amount" type="number" required min="0.01"
+                                                max={currency === 'USD' ? maxTransactionAmount : undefined}
                                                 step="0.01" placeholder="0.00" aria-describedby="amount-direction"
                                                 value={amount} onChange={(event) => setAmount(event.target.value)} />
+                                            <select aria-label="Transaction currency" value={currency}
+                                                onChange={(event) => {
+                                                    setRate(null)
+                                                    setRateError('')
+                                                    setCurrency(event.target.value)
+                                                }}>
+                                                <option value="USD">US Dollar ($)</option>
+                                                {currencies.map(({ iso_code, name }) =>
+                                                    <option key={iso_code} value={iso_code}>{name} ({iso_code})</option>)}
+                                            </select>
                                         </div>
                                         <small id="amount-direction" aria-live="polite">
                                             {amountSign === -1 ? 'Subtract from balance' : 'Add to balance'} · Click −/+ to switch
                                         </small>
+                                        {currency !== 'USD' && (
+                                            <small role="status">
+                                                {rateError || (usdAmount === null ? 'Loading exchange rate…'
+                                                    : numericAmount > 0 && Number.isFinite(usdAmount)
+                                                        ? `USD equivalent: ${usdFormatter.format(amountSign * usdAmount)}` : '')}
+                                            </small>
+                                        )}
+                                        {currencyError && <small role="status">{currencyError}</small>}
+                                        {(currencyError || rateError) && (
+                                            <button type="button" onClick={() => {
+                                                setCurrencyError('')
+                                                setRateError('')
+                                                setCurrencyRetry((value) => value + 1)
+                                            }}>Retry currency rates</button>
+                                        )}
                                     </div>
-                                    <label htmlFor="transaction-date">Date
-                                        <input id="transaction-date" type="date" required value={transactionDate}
-                                            onChange={(event) => setTransactionDate(event.target.value)} />
-                                    </label>
                                     <div className="transaction-description" style={{ display: 'flex', alignItems: 'end', gap: '16px' }}>
                                         <label htmlFor="transaction-description" style={{ flex: 1 }}>Description (optional)
                                             <textarea id="transaction-description" rows={3} maxLength={250} placeholder="Add a note"
@@ -653,7 +748,9 @@ function App() {
                                         </label>
                                     </div>
                                 </div>
-                                <button type="submit">{isSaving ? 'Saving...' : 'Save transaction'}</button>
+                                <button type="submit" disabled={currency !== 'USD' && usdAmount === null}>
+                                    {isSaving ? 'Saving...' : 'Save transaction'}
+                                </button>
                             </fieldset>
                         </form>
 
@@ -708,20 +805,29 @@ function App() {
                                     </tr></thead>
                                     <tbody>{transactions.map((transaction) => (
                                         <tr key={transaction.transactionId}>
-                                            <td>{transaction.name}</td>
-                                            <td>{transaction.type}</td>
+                                            <td><TransactionField label="Transaction name" kind="name" value={transaction.name}
+                                                onSave={(name) => saveTransactionField(transaction, { name })}>{transaction.name}</TransactionField></td>
+                                            <td><TransactionField label="Transaction type" kind="type" value={transaction.type}
+                                                options={[...new Set([transaction.type, ...transactionTypes, ...historyTypes])]}
+                                                onSave={(type) => saveTransactionField(transaction, { type })}>{transaction.type}</TransactionField></td>
                                             <td><TransactionAmount userId={transaction.userId} transactionId={transaction.transactionId}
                                                 amount={transaction.amount} onSaved={(amount) => {
                                                     setTransactions((current) => current.map((saved) => saved.transactionId === transaction.transactionId
                                                         ? { ...saved, amount } : saved))
                                                     setSummaryRefresh((value) => value + 1)
                                                 }} /></td>
-                                            <td><time dateTime={transaction.date}>{displayDate(transaction.date)}</time></td>
-                                            <td>{transaction.description || '—'}</td>
+                                            <td><TransactionField label="Transaction date" kind="date" value={transaction.date}
+                                                onSave={(date) => saveTransactionField(transaction, { date })}>
+                                                <time dateTime={transaction.date}>{displayDate(transaction.date)}</time>
+                                            </TransactionField></td>
+                                            <td><TransactionField label="Transaction description" kind="description" value={transaction.description ?? ''}
+                                                onSave={(description) => saveTransactionField(transaction, { description })}>
+                                                {transaction.description || '—'}
+                                            </TransactionField></td>
                                             <td><input type="checkbox" checked={transaction.recurring}
                                                 aria-label={`Repeat ${transaction.name} monthly`}
                                                 disabled={updatingRecurringId !== null || deletingTransactionId === transaction.transactionId}
-                                                onChange={(event) => void updateRecurring(transaction.transactionId, event.target.checked)} /></td>
+                                                onChange={(event) => void updateRecurring(transaction, event.target.checked)} /></td>
                                             <td className="transaction-actions">
                                                 <button type="button" className="transaction-delete"
                                                     aria-label={`Delete ${transaction.name}`} title="Delete transaction"

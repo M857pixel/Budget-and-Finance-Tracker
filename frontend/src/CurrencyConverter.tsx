@@ -1,32 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const API = 'https://api.frankfurter.dev/v2'
-
-type Currency = {
-    iso_code: string
-    name: string
-    type: string
-}
-
-type ExchangeRate = {
-    base: string
-    quote: string
-    rate: number
-    date: string
-}
-
-// Cancel requests on navigation and stop waiting after 10 seconds.
-async function fetchJson<T>(url: string, signal: AbortSignal): Promise<T> {
-    const response = await fetch(url, {
-        signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-    })
-
-    if (!response.ok) {
-        throw new Error(`Exchange rate service returned ${response.status}.`)
-    }
-
-    return response.json() as Promise<T>
-}
+import { loadCurrencies, loadExchangeRate, type Currency, type ExchangeRate } from './exchangeRates'
 
 export default function CurrencyConverter() {
     const [amount, setAmount] = useState('')
@@ -41,27 +15,11 @@ export default function CurrencyConverter() {
     useEffect(() => {
         const controller = new AbortController()
 
-        const loadCurrencies = async () => {
+        const fetchCurrencies = async () => {
             setCurrencyError('')
 
             try {
-                const data = await fetchJson<Currency[]>(
-                    `${API}/currencies`,
-                    controller.signal,
-                )
-
-                const available = data
-                    .filter((item) =>
-                        item.type === 'currency'
-                        && /^[A-Z]{3}$/.test(item.iso_code)
-                        && typeof item.name === 'string'
-                        && item.iso_code !== 'USD',
-                    )
-                    .sort((a, b) => a.name.localeCompare(b.name))
-
-                if (available.length === 0) {
-                    throw new Error('No currencies available.')
-                }
+                const available = await loadCurrencies(controller.signal)
 
                 if (!controller.signal.aborted) {
                     setCurrencies(available)
@@ -84,7 +42,7 @@ export default function CurrencyConverter() {
             }
         }
 
-        void loadCurrencies()
+        void fetchCurrencies()
         return () => controller.abort()
     }, [retry])
 
@@ -99,21 +57,7 @@ export default function CurrencyConverter() {
             setRateError('')
 
             try {
-                const data = await fetchJson<ExchangeRate>(
-                    `${API}/rate/USD/${encodeURIComponent(currency)}`,
-                    controller.signal,
-                )
-
-                if (
-                    data.base !== 'USD'
-                    || data.quote !== currency
-                    || typeof data.rate !== 'number'
-                    || !Number.isFinite(data.rate)
-                    || data.rate <= 0
-                    || !/^\d{4}-\d{2}-\d{2}$/.test(data.date)
-                ) {
-                    throw new Error('Invalid rate response.')
-                }
+                const data = await loadExchangeRate(currency, controller.signal)
 
                 if (!controller.signal.aborted) {
                     setRate(data)
