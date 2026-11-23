@@ -452,6 +452,7 @@ function App() {
     // connect to FileUploadController in backend to allow file uploads
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
     const [uploading, setUploading] = useState(false)
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     const uploadFile = async () => {
         // Require a file and prevent repeated clicks during an import.
@@ -518,6 +519,10 @@ function App() {
             // Show how many transactions the backend successfully imported.
             const result: { importedCount: number } =
                 await importResponse.json()
+            setSelectedFile(null)
+            if (fileInputRef.current) {
+                fileInputRef.current.value = ''
+            }
             setSummaryRefresh((value) => value + 1)
 
             setMessage(
@@ -854,6 +859,7 @@ function App() {
                         <label>
                             Select a file
                             <input
+                                ref={fileInputRef}
                                 type="file"
                                 disabled={uploading}
                                 onChange={(event) => {
