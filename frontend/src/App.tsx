@@ -5,7 +5,6 @@ import MonthlySummary from './MonthlySummary'
 import TransactionAmount from './TransactionAmount'
 import TransactionField from './TransactionField'
 import { useEffect, useRef, useState } from 'react'
-import CurrencyConverter from './CurrencyConverter'
 import { loadCurrencies, loadExchangeRate, type Currency, type ExchangeRate } from './exchangeRates'
 
 const maxTransactionAmount = 9_999_999_999.99
@@ -179,7 +178,7 @@ function App() {
         window.addEventListener('ledger-categories-changed', refreshCategories)
         return () => window.removeEventListener('ledger-categories-changed', refreshCategories)
     }, [])
-    const [activeTab, setActiveTab] = useState<'add' | 'currency' | 'history' | 'import'>('add')
+    const [activeTab, setActiveTab] = useState<'add' | 'history' | 'import'>('add')
 
     useEffect(() => {
         if (!isLoggedIn || activeTab !== 'add') return
@@ -651,12 +650,6 @@ function App() {
                     Add Transaction
                 </button>
                 <button
-                    className={activeTab === 'currency' ? 'active' : ''}
-                    onClick={() => setActiveTab('currency')}
-                >
-                    Currency Converter
-                </button>
-                <button
                     className={activeTab === 'history' ? 'active' : ''}
                     onClick={() => {
                         historyCatalogCache.current = null
@@ -760,11 +753,13 @@ function App() {
                         </form>
 
                         <p role="status">{message}</p>
+                        <small>
+                            Exchange rates are reference estimates from the Frankfurter API.
+                            Transfer providers may apply different rates and fees.
+                        </small>
                     </section>
                 )}
 
-                {/* placeholders for future functionality*/}
-                {activeTab === 'currency' && <CurrencyConverter />}
                 {/* saved transaction history */}
                 {activeTab === 'history' && (
                     <section className="transaction-history">
